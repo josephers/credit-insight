@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
-import { Plus, Search, FileText, ChevronRight, Briefcase, Calendar, Trash2, Settings } from 'lucide-react';
+import React, { useMemo, useState, useRef } from 'react';
+import { Plus, Search, FileText, ChevronRight, Briefcase, Calendar, Trash2, Settings, Download, UploadCloud } from 'lucide-react';
 import { DealSession } from '../types';
+import { exportDatabase, importDatabase } from '../services/db';
 
 interface DashboardProps {
   sessions: DealSession[];
@@ -8,6 +9,7 @@ interface DashboardProps {
   onNewAnalysis: () => void;
   onManageTerms: () => void;
   onDeleteSession: (sessionId: string) => void;
+  onDataImported: () => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
@@ -15,9 +17,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onSelectSession, 
   onNewAnalysis, 
   onManageTerms,
-  onDeleteSession
+  onDeleteSession,
+  onDataImported
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Group sessions by Borrower Name
   const groupedSessions = useMemo(() => {
@@ -52,6 +56,52 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return result;
   }, [groupedSessions, searchTerm]);
 
+  const handleExport = async () => {
+    try {
+      const json = await exportDatabase();
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `credit-insight-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Export failed", error);
+      alert("Failed to export database.");
+    }
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!confirm("Importing will merge the backup with your current data. Continue?")) {
+      e.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const json = event.target?.result as string;
+        await importDatabase(json);
+        alert("Portfolio imported successfully!");
+        onDataImported();
+      } catch (error) {
+        console.error("Import failed", error);
+        alert("Failed to import file. Please ensure it is a valid CreditInsight backup.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // Reset
+  };
+
   return (
     <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
       {/* Header */}
@@ -64,6 +114,33 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <p className="text-slate-500 mt-1">Manage active credit agreement analysis sessions.</p>
         </div>
         <div className="flex items-center gap-3">
+           
+           {/* Data Management Buttons */}
+           <div className="flex items-center bg-slate-50 rounded-lg p-1 border border-slate-200 mr-2">
+             <button
+               onClick={handleExport}
+               className="p-2 text-slate-600 hover:text-brand-600 hover:bg-white rounded-md transition-all"
+               title="Export Portfolio to File (Share)"
+             >
+               <Download className="w-4 h-4" />
+             </button>
+             <div className="w-px h-4 bg-slate-300 mx-1"></div>
+             <button
+               onClick={handleImportClick}
+               className="p-2 text-slate-600 hover:text-brand-600 hover:bg-white rounded-md transition-all"
+               title="Import Portfolio from File"
+             >
+               <UploadCloud className="w-4 h-4" />
+             </button>
+             <input 
+               type="file" 
+               ref={fileInputRef} 
+               onChange={handleFileChange} 
+               accept=".json" 
+               className="hidden" 
+             />
+           </div>
+
            <button 
              onClick={onManageTerms}
              className="flex items-center gap-2 px-4 py-2.5 text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 font-medium transition-colors"
@@ -107,12 +184,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <p className="text-slate-500 max-w-md mx-auto mb-8">
                 Upload a credit agreement to automatically create a new deal session and extract borrower details.
               </p>
-              <button 
-                onClick={onNewAnalysis}
-                className="text-brand-600 font-semibold hover:text-brand-700 inline-flex items-center justify-center gap-2"
-              >
-                Start your first analysis <ChevronRight className="w-4 h-4" />
-              </button>
+              <div className="flex justify-center gap-4">
+                <button 
+                  onClick={onNewAnalysis}
+                  className="text-brand-600 font-semibold hover:text-brand-700 inline-flex items-center justify-center gap-2"
+                >
+                  Start your first analysis <ChevronRight className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={handleImportClick}
+                  className="text-slate-500 hover:text-slate-700 inline-flex items-center justify-center gap-2 text-sm underline"
+                >
+                  Import Backup
+                </button>
+              </div>
             </div>
           )}
 

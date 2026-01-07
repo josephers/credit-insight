@@ -87,3 +87,53 @@ export const deleteSessionById = async (id: string): Promise<void> => {
     request.onerror = () => reject(request.error);
   });
 };
+
+/**
+ * Exports the entire database to a JSON string.
+ */
+export const exportDatabase = async (): Promise<string> => {
+  const sessions = await getAllSessions();
+  return JSON.stringify(sessions, null, 2);
+};
+
+/**
+ * Imports a JSON string into the database, merging with existing data.
+ */
+export const importDatabase = async (jsonString: string): Promise<void> => {
+  try {
+    const sessions = JSON.parse(jsonString);
+    if (!Array.isArray(sessions)) throw new Error("Invalid backup file format");
+
+    const db = await openDB();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+
+      sessions.forEach((s: any) => {
+        // Rehydrate Dates from JSON strings
+        const session = { ...s };
+        session.lastModified = new Date(session.lastModified);
+        
+        if (session.chatHistory) {
+            session.chatHistory = session.chatHistory.map((c: any) => ({
+                ...c,
+                timestamp: new Date(c.timestamp)
+            }));
+        }
+        
+        if (session.webFinancials) {
+            session.webFinancials.lastUpdated = new Date(session.webFinancials.lastUpdated);
+        }
+        
+        store.put(session);
+      });
+    });
+  } catch (e) {
+    console.error("Import failed", e);
+    throw e;
+  }
+};

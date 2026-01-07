@@ -27,20 +27,22 @@ function App() {
   // Derived State
   const activeSession = sessions.find(s => s.id === activeSessionId) || null;
 
+  const refreshSessions = useCallback(async () => {
+    setIsLoadingDB(true);
+    try {
+      const loadedSessions = await getAllSessions();
+      setSessions(loadedSessions);
+    } catch (err) {
+      console.error("Failed to load sessions:", err);
+    } finally {
+      setIsLoadingDB(false);
+    }
+  }, []);
+
   // Load from DB on Mount
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const loadedSessions = await getAllSessions();
-        setSessions(loadedSessions);
-      } catch (err) {
-        console.error("Failed to load sessions:", err);
-      } finally {
-        setIsLoadingDB(false);
-      }
-    };
-    loadData();
-  }, []);
+    refreshSessions();
+  }, [refreshSessions]);
 
   // Handlers
   const handleFileSelect = async (uploadedFile: UploadedFile) => {
@@ -186,6 +188,7 @@ function App() {
             onNewAnalysis={() => setCurrentView(AppView.UPLOAD)}
             onManageTerms={() => setCurrentView(AppView.TERMS)}
             onDeleteSession={handleDeleteSession}
+            onDataImported={refreshSessions}
           />
         );
       
