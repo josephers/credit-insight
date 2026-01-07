@@ -21,6 +21,37 @@ const AZURE_AD_TOKEN = process.env.AZURE_OPENAI_AD_TOKEN;
 const AZURE_DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT;
 
 /**
+ * Helper: Decode and Log JWT details for debugging Audience/Auth issues.
+ */
+const debugJwtToken = (token: string) => {
+  try {
+    const base64Url = token.split('.')[1];
+    if (!base64Url) return;
+    
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+
+    const payload = JSON.parse(jsonPayload);
+    
+    console.groupCollapsed("🔐 Azure AD Token Debug");
+    console.log("Audience (aud):", payload.aud);
+    console.log("Issuer (iss):", payload.iss);
+    console.log("Expiration:", new Date(payload.exp * 1000));
+    console.log("Scopes (scp):", payload.scp);
+    
+    const expectedAudience = "https://cognitiveservices.azure.com";
+    if (payload.aud !== expectedAudience) {
+      console.warn(`⚠️ AUDIENCE MISMATCH? Azure usually expects '${expectedAudience}', but token has '${payload.aud}'.`);
+    }
+    console.groupEnd();
+  } catch (e) {
+    console.warn("Failed to decode debug token info", e);
+  }
+};
+
+/**
  * Helper: Generate Azure Headers based on available Auth method.
  * Prioritizes Entra ID (AD Token) if available, otherwise falls back to API Key.
  */
@@ -30,6 +61,7 @@ const getAzureHeaders = () => {
   };
 
   if (AZURE_AD_TOKEN) {
+    debugJwtToken(AZURE_AD_TOKEN); // Log token details to console
     headers['Authorization'] = `Bearer ${AZURE_AD_TOKEN}`;
   } else if (AZURE_KEY) {
     headers['api-key'] = AZURE_KEY;
@@ -38,6 +70,20 @@ const getAzureHeaders = () => {
   }
 
   return headers;
+};
+
+/**
+ * Helper: Handle Azure API Errors with specific advice for RBAC/Auth.
+ */
+const handleAzureError = async (response: Response) => {
+  const errorText = await response.text();
+  let errorMessage = `Azure Error: ${response.status} ${response.statusText}`;
+  
+  if (response.status === 401 || response.status === 403) {
+    errorMessage += `\n\nAuth Failed. \n1. Check Token Audience (see console).\n2. Ensure your user has the 'Cognitive Services OpenAI User' role assigned in Azure IAM.`;
+  }
+  
+  throw new Error(`${errorMessage} - ${errorText}`);
 };
 
 /**
@@ -151,10 +197,8 @@ export const extractAndBenchmark = async (
         })
       });
 
-      if (!response.ok) {
-         const errorText = await response.text();
-         throw new Error(`Azure Error: ${response.status} ${response.statusText} - ${errorText}`);
-      }
+      if (!response.ok) await handleAzureError(response);
+      
       const json = await response.json();
       const content = json.choices[0].message.content;
       rawResults = JSON.parse(content).results;
@@ -269,10 +313,8 @@ export const rebenchmarkTerms = async (
         })
       });
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Azure Error: ${response.status} - ${errorText}`);
-      }
+      if (!response.ok) await handleAzureError(response);
+      
       const json = await response.json();
       rawResults = JSON.parse(json.choices[0].message.content).results;
 
@@ -349,10 +391,8 @@ export const sendChatMessage = async (
         body: JSON.stringify({ messages, temperature: 0.7 })
       });
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Azure Error: ${response.status} - ${errorText}`);
-      }
+      if (!response.ok) await handleAzureError(response);
+      
       const json = await response.json();
       return json.choices[0].message.content;
 
