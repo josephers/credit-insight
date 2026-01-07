@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { ExtractionResult, StandardTerm, ChatMessage, BenchmarkResult } from "../types";
+import { ExtractionResult, StandardTerm, ChatMessage, BenchmarkResult, WebFinancialData } from "../types";
 import { MARKET_BENCHMARK } from "../constants";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -158,6 +158,79 @@ export const compareWithBenchmark = async (
     return [];
   }
 }
+
+/**
+ * Fetches latest financial data for a borrower using Google Search Grounding.
+ */
+export const fetchFinancialsFromWeb = async (
+  borrowerName: string
+): Promise<{ data: WebFinancialData[], sourceUrls: string[] }> => {
+  try {
+    const prompt = `
+      Find the latest financial data for "${borrowerName}".
+      
+      Prioritize searching "SEC.gov" for the latest 10-K or 10-Q filings, or reputable financial news sources.
+      
+      Extract the following metrics if available:
+      1. LTM Revenue (Last Twelve Months)
+      2. LTM EBITDA
+      3. Total Debt
+      4. Cash & Cash Equivalents
+      5. Net Leverage Ratio
+      
+      Return a JSON array where each item has:
+      - metric (e.g., "LTM Revenue")
+      - value (e.g., "$500M")
+      - period (e.g., "Q3 2024" or "FY 2023")
+      - source (Brief name of source, e.g. "SEC 10-Q")
+    `;
+
+    const response = await ai.models.generateContent({
+      model: MODEL_NAME, // Supports search tools
+      contents: [{ parts: [{ text: prompt }] }],
+      config: {
+        tools: [{ googleSearch: {} }],
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              metric: { type: Type.STRING },
+              value: { type: Type.STRING },
+              period: { type: Type.STRING },
+              source: { type: Type.STRING }
+            },
+            required: ['metric', 'value', 'period', 'source']
+          }
+        }
+      }
+    });
+
+    const data = JSON.parse(response.text!) as WebFinancialData[];
+    
+    // Extract Source URLs from Grounding Metadata
+    const sourceUrls: string[] = [];
+    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+    
+    if (chunks) {
+      chunks.forEach((chunk: any) => {
+        if (chunk.web && chunk.web.uri) {
+          sourceUrls.push(chunk.web.uri);
+        }
+      });
+    }
+
+    // Deduplicate URLs
+    const uniqueUrls = Array.from(new Set(sourceUrls));
+
+    return { data, sourceUrls: uniqueUrls };
+
+  } catch (error) {
+    console.error("Web Financials error:", error);
+    throw error;
+  }
+};
 
 /**
  * Sends a chat message to Gemini with the document context.

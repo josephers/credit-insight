@@ -21,6 +21,13 @@ export interface BenchmarkResult {
   commentary: string;
 }
 
+export interface WebFinancialData {
+  metric: string;
+  value: string;
+  period: string;
+  source: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'model';
@@ -42,6 +49,11 @@ export interface DealSession {
   file: UploadedFile;
   extractionResults: ExtractionResult[];
   benchmarkResults: BenchmarkResult[];
+  webFinancials?: {
+    data: WebFinancialData[];
+    sourceUrls: string[];
+    lastUpdated: Date;
+  };
   chatHistory: ChatMessage[];
   lastModified: Date;
 }

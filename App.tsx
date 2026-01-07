@@ -165,6 +165,8 @@ function App() {
             onUpdateBorrowerName={(name) => handleUpdateActiveSession({ borrowerName: name })}
             benchmarkResults={activeSession.benchmarkResults}
             setBenchmarkResults={(results) => handleUpdateActiveSession({ benchmarkResults: typeof results === 'function' ? results(activeSession.benchmarkResults) : results })}
+            webFinancials={activeSession.webFinancials}
+            setWebFinancials={(data) => handleUpdateActiveSession({ webFinancials: data })}
           />
         );
         

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Play, Download, ChevronDown, ChevronUp, Quote, AlertCircle, FileText, Scale, LayoutList, AlertTriangle } from 'lucide-react';
-import { StandardTerm, ExtractionResult, UploadedFile, BenchmarkResult } from '../types';
-import { extractTermsFromDocument, compareWithBenchmark } from '../services/geminiService';
+import { Play, Download, ChevronDown, ChevronUp, Quote, AlertCircle, FileText, Scale, LayoutList, AlertTriangle, Globe, ExternalLink, RefreshCw } from 'lucide-react';
+import { StandardTerm, ExtractionResult, UploadedFile, BenchmarkResult, WebFinancialData } from '../types';
+import { extractTermsFromDocument, compareWithBenchmark, fetchFinancialsFromWeb } from '../services/geminiService';
 
 interface AnalysisViewProps {
   file: UploadedFile;
@@ -13,9 +13,11 @@ interface AnalysisViewProps {
   onUpdateBorrowerName: (name: string) => void;
   benchmarkResults: BenchmarkResult[];
   setBenchmarkResults: React.Dispatch<React.SetStateAction<BenchmarkResult[]>>;
+  webFinancials?: { data: WebFinancialData[], sourceUrls: string[], lastUpdated: Date };
+  setWebFinancials: (data: { data: WebFinancialData[], sourceUrls: string[], lastUpdated: Date }) => void;
 }
 
-type Tab = 'terms' | 'covenants' | 'baskets' | 'benchmark';
+type Tab = 'terms' | 'covenants' | 'baskets' | 'benchmark' | 'financials';
 
 export const AnalysisView: React.FC<AnalysisViewProps> = ({ 
   file, 
@@ -26,9 +28,12 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   borrowerName,
   onUpdateBorrowerName,
   benchmarkResults,
-  setBenchmarkResults
+  setBenchmarkResults,
+  webFinancials,
+  setWebFinancials
 }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isFetchingWeb, setIsFetchingWeb] = useState(false);
   const [statusText, setStatusText] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('terms');
   const [expandedResult, setExpandedResult] = useState<string | null>(null);
@@ -61,6 +66,28 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     } finally {
       setIsAnalyzing(false);
       setStatusText('');
+    }
+  };
+
+  const handleFetchFinancials = async () => {
+    if (!borrowerName || borrowerName === 'New Borrower') {
+      alert("Please extract a Borrower Name first or update it manually.");
+      return;
+    }
+    
+    setIsFetchingWeb(true);
+    try {
+      const result = await fetchFinancialsFromWeb(borrowerName);
+      setWebFinancials({
+        data: result.data,
+        sourceUrls: result.sourceUrls,
+        lastUpdated: new Date()
+      });
+    } catch (e) {
+      console.error(e);
+      alert("Failed to fetch financial data from web.");
+    } finally {
+      setIsFetchingWeb(false);
     }
   };
 
@@ -154,20 +181,18 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
             <div className="flex flex-col gap-3">
                
                {/* Section Link / Citation Header */}
-               <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
-                 <div className="p-1 bg-brand-100 text-brand-600 rounded-md">
-                   <FileText className="w-3.5 h-3.5" />
-                 </div>
-                 <span className="font-semibold uppercase tracking-wide text-[10px]">Source Reference:</span>
-                 <span className="font-mono font-medium text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-sm select-all">
+               <div className="flex items-center gap-2 mb-1">
+                 <FileText className="w-4 h-4 text-brand-600" />
+                 <span className="font-semibold text-xs text-slate-600 uppercase tracking-wider">Source Reference:</span>
+                 <span className="font-mono text-xs font-medium text-slate-800 bg-white px-1.5 py-0.5 rounded border border-slate-200 select-all">
                    {result.sourceSection}
                  </span>
                </div>
 
                {/* Evidence Quote Block */}
                <div className="relative pl-4 mt-1">
-                 <div className="absolute left-0 top-1 bottom-1 w-0.5 bg-brand-300 rounded-full"></div>
-                 <Quote className="absolute -left-2 -top-1 w-4 h-4 text-brand-600 bg-slate-50 fill-white" />
+                 <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-brand-300 rounded-full"></div>
+                 <Quote className="absolute -left-2 top-0 w-4 h-4 text-brand-600 bg-slate-50 fill-white" />
                  <p className="text-sm text-slate-600 italic leading-relaxed whitespace-pre-wrap pt-0.5">
                    "{result.evidence}"
                  </p>
@@ -336,6 +361,95 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
              </div>
           </div>
         );
+
+      case 'financials':
+        return (
+          <div className="max-w-5xl mx-auto">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">Borrower Financials (Web)</h3>
+                <p className="text-slate-500 text-sm">
+                  Live data retrieved from SEC.gov and financial news via Google Search.
+                </p>
+              </div>
+              <button
+                onClick={handleFetchFinancials}
+                disabled={isFetchingWeb}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition-all ${
+                   isFetchingWeb ? 'bg-slate-200 text-slate-500 cursor-wait' : 'bg-brand-600 text-white hover:bg-brand-700'
+                }`}
+              >
+                {isFetchingWeb ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" /> Fetching...
+                  </>
+                ) : (
+                  <>
+                    <Globe className="w-4 h-4" /> Fetch Latest Financials
+                  </>
+                )}
+              </button>
+            </div>
+
+            {(!webFinancials || webFinancials.data.length === 0) ? (
+               <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                   <Globe className="w-8 h-8 text-slate-300" />
+                 </div>
+                 <h4 className="text-lg font-semibold text-slate-700 mb-2">No Financial Data</h4>
+                 <p className="text-slate-500 max-w-sm mx-auto mb-6">
+                   Click the button above to search the web for {borrowerName}'s latest 10-K/10-Q filings and financial metrics.
+                 </p>
+               </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                   {webFinancials.data.map((item, idx) => (
+                     <div key={idx} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-brand-200 transition-colors">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">{item.metric}</p>
+                        <p className="text-2xl font-bold text-slate-900 mb-1">{item.value}</p>
+                        <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-50">
+                          <span className="text-xs font-medium text-brand-600 bg-brand-50 px-2 py-0.5 rounded">
+                            {item.period}
+                          </span>
+                          <span className="text-[10px] text-slate-400 truncate max-w-[120px]" title={item.source}>
+                            Src: {item.source}
+                          </span>
+                        </div>
+                     </div>
+                   ))}
+                </div>
+
+                {/* Sources Footnote */}
+                {webFinancials.sourceUrls.length > 0 && (
+                  <div className="bg-slate-100 rounded-lg p-4 border border-slate-200">
+                    <h5 className="text-xs font-bold text-slate-600 uppercase mb-2 flex items-center gap-1">
+                      <ExternalLink className="w-3 h-3" /> Source Links (EDGAR / Web)
+                    </h5>
+                    <div className="flex flex-wrap gap-2">
+                      {webFinancials.sourceUrls.map((url, idx) => (
+                        <a 
+                          key={idx} 
+                          href={url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-600 hover:text-blue-800 hover:underline bg-white px-2 py-1 rounded border border-slate-200 truncate max-w-xs"
+                        >
+                          {url}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                <p className="text-right text-[10px] text-slate-400">
+                  Last updated: {new Date(webFinancials.lastUpdated).toLocaleString()}
+                </p>
+              </div>
+            )}
+          </div>
+        );
     }
   };
 
@@ -378,7 +492,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
           { id: 'terms', label: 'Term Sheet', icon: FileText },
           { id: 'covenants', label: 'Covenant Matrix', icon: Scale },
           { id: 'baskets', label: 'Basket Analysis', icon: LayoutList },
-          { id: 'benchmark', label: 'Benchmarking', icon: AlertTriangle }
+          { id: 'benchmark', label: 'Benchmarking', icon: AlertTriangle },
+          { id: 'financials', label: 'Financials (Web)', icon: Globe }
         ].map(tab => (
           <button
             key={tab.id}
