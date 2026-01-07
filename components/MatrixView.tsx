@@ -121,7 +121,7 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
       )}
 
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm flex-shrink-0">
+      <div className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm flex-shrink-0 z-40 relative">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <LayoutGrid className="w-6 h-6 text-brand-600" />
@@ -140,7 +140,7 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
            </button>
            
            {/* Dropdown */}
-           <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 hidden group-hover:block z-40 p-2 max-h-96 overflow-y-auto">
+           <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 hidden group-hover:block z-50 p-2 max-h-96 overflow-y-auto">
              <div className="text-xs font-bold text-slate-400 uppercase px-2 py-1 mb-1">Available Sessions</div>
              {sessions.map(s => (
                <label key={s.id} className="flex items-center gap-2 px-2 py-2 hover:bg-slate-50 rounded cursor-pointer">
@@ -162,19 +162,19 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
       <div className="flex-1 overflow-auto p-6 scroll-smooth">
         <div className="inline-block min-w-full align-middle">
           <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white">
-            <table className="min-w-full divide-y divide-slate-200">
+            <table className="min-w-full divide-y divide-slate-200 border-separate border-spacing-0">
               <thead className="bg-slate-50">
                 <tr>
-                  <th scope="col" className="sticky left-0 z-20 bg-slate-50 px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-64 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                  <th scope="col" className="sticky left-0 top-0 z-30 bg-slate-50 px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-64 border-r border-slate-200 border-b shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                     Terms / Feature
                   </th>
                   {/* Benchmark Column */}
-                  <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-64 bg-slate-50/50">
+                  <th scope="col" className="sticky top-0 z-20 bg-slate-50 px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-64 border-b border-slate-200">
                      Market Standard (Benchmark)
                   </th>
                   {/* Deal Columns */}
                   {selectedSessions.map(session => (
-                    <th key={session.id} scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-800 uppercase tracking-wider w-64 min-w-[250px]">
+                    <th key={session.id} scope="col" className="sticky top-0 z-20 bg-slate-50 px-6 py-4 text-left text-xs font-bold text-slate-800 uppercase tracking-wider w-64 min-w-[250px] border-b border-slate-200">
                       <div className="flex justify-between items-start gap-2">
                         <span className="line-clamp-2">{session.borrowerName}</span>
                         <button 
@@ -197,7 +197,7 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
                   <React.Fragment key={category}>
                     {/* Category Header Row */}
                     <tr className="bg-slate-100/50">
-                      <td colSpan={selectedSessions.length + 2} className="sticky left-0 z-10 bg-slate-100/50 px-6 py-2 text-xs font-bold text-slate-700 uppercase tracking-wider border-r border-slate-200">
+                      <td colSpan={selectedSessions.length + 2} className="sticky left-0 z-10 bg-slate-100 px-6 py-2 text-xs font-bold text-slate-700 uppercase tracking-wider border-r border-slate-200">
                         {category}
                       </td>
                     </tr>

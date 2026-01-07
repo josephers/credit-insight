@@ -59,7 +59,7 @@ export default defineConfig(({ mode }) => {
     ],
     define: {
       // Polyfill process.env.API_KEY for browser usage
-      'process.env.API_KEY': JSON.stringify(env.API_KEY)
+      'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY)
     },
     server: {
       host: true, // Exposes the server to the network (0.0.0.0)
