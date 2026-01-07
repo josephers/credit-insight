@@ -2,7 +2,7 @@ import { DealSession } from '../types';
 
 const DB_NAME = 'CreditInsightDB';
 const STORE_NAME = 'sessions';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 /**
  * Open the IndexedDB database.

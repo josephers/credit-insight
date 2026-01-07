@@ -118,7 +118,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
           {/* Grid of Borrowers */}
           <div className="space-y-8">
-            {Object.entries(filteredGroups).map(([borrower, groupSessions]) => (
+            {(Object.entries(filteredGroups) as [string, DealSession[]][]).map(([borrower, groupSessions]) => (
               <div key={borrower} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <h2 className="text-lg font-bold text-slate-800 mb-4 pl-1 flex items-center gap-2">
                   <span className="w-1.5 h-6 bg-brand-500 rounded-full"></span>

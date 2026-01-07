@@ -193,7 +193,7 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-200">
-                {Object.entries(categories).map(([category, catTerms]) => (
+                {(Object.entries(categories) as [string, StandardTerm[]][]).map(([category, catTerms]) => (
                   <React.Fragment key={category}>
                     {/* Category Header Row */}
                     <tr className="bg-slate-100/50">
