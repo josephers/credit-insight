@@ -1,0 +1,5 @@
+{
+  "name": "CreditInsight",
+  "description": "A RAG-based analysis tool for corporate banking Credit Agreements using Gemini 1.5 Pro's long context window to extract terms and answer queries with grounding.",
+  "requestFramePermissions": []
+}
