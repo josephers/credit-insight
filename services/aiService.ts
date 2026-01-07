@@ -8,7 +8,9 @@ const pdfjsLib = (pdfjsModule as any).default || pdfjsModule;
 
 // Initialize PDF.js worker
 if (pdfjsLib.GlobalWorkerOptions) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://esm.sh/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  // Use CDNJS for the worker to ensure we get a classic script (UMD) compatible with standard Worker loading
+  // esm.sh/build/pdf.worker.min.js often returns an ES module which causes "import outside module" errors in workers
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
 
 const gemini = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -137,6 +139,11 @@ const extractTextFromPdf = async (base64Data: string): Promise<string> => {
       bytes[i] = binaryString.charCodeAt(i);
     }
     
+    // Ensure worker is ready
+    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
     const loadingTask = pdfjsLib.getDocument({ data: bytes });
     const pdf = await loadingTask.promise;
     
@@ -150,7 +157,7 @@ const extractTextFromPdf = async (base64Data: string): Promise<string> => {
     return fullText;
   } catch (error) {
     console.error("PDF Extraction Failed", error);
-    throw new Error("Failed to extract text from PDF for Azure analysis.");
+    throw new Error("Failed to extract text from PDF for Azure analysis. " + (error instanceof Error ? error.message : String(error)));
   }
 };
 
