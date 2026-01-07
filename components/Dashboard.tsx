@@ -129,8 +129,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 onChange={(e) => onSetProvider(e.target.value as AIProvider)}
                 className="bg-white border border-slate-300 rounded text-sm text-slate-700 py-1 pl-2 pr-6 outline-none focus:ring-1 focus:ring-brand-500"
               >
-                <option value="gemini">Google Gemini 1.5</option>
-                <option value="azure">Azure OpenAI (GPT-4)</option>
+                <option value="gemini">Google Gemini 3 Flash</option>
+                <option value="azure">Azure OpenAI (GPT-5.2)</option>
               </select>
            </div>
 

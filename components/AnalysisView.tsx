@@ -42,8 +42,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
-    setResults([]);
-    setBenchmarkResults([]);
+    // Note: We do NOT clear results here. We want to keep previous results visible
+    // in case the new request fails (e.g. network error).
     
     try {
       setStatusText(`Analyzing document using ${aiProvider === 'azure' ? 'Azure OpenAI' : 'Gemini'}...`);
@@ -51,6 +51,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
       // Perform simultaneous extraction and benchmarking
       const { extraction, benchmarking } = await extractAndBenchmark(file.data, file.type, terms, undefined, aiProvider);
       
+      // Only update state after successful response
       setResults(extraction);
       setBenchmarkResults(benchmarking);
 
@@ -63,6 +64,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     } catch (e) {
       console.error(e);
       alert(`Analysis failed using ${aiProvider}. Please check your keys or try Gemini.`);
+      // Previous results remain in state
     } finally {
       setIsAnalyzing(false);
       setStatusText('');
