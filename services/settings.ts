@@ -12,6 +12,7 @@ export const getSettings = async (): Promise<AppSettings> => {
         // Migration logic for old settings format
         let profiles = json.benchmarkProfiles;
         let activeId = json.activeProfileId;
+        let provider = json.aiProvider;
 
         // If no profiles but legacy benchmarks exist
         if (!profiles && json.benchmarks) {
@@ -25,7 +26,8 @@ export const getSettings = async (): Promise<AppSettings> => {
         return {
             terms: json.terms || DEFAULT_TERMS,
             benchmarkProfiles: profiles || DEFAULT_BENCHMARK_PROFILES,
-            activeProfileId: activeId || DEFAULT_BENCHMARK_PROFILES[0].id
+            activeProfileId: activeId || DEFAULT_BENCHMARK_PROFILES[0].id,
+            aiProvider: provider || 'gemini'
         };
       }
     }
@@ -37,7 +39,8 @@ export const getSettings = async (): Promise<AppSettings> => {
   return {
     terms: DEFAULT_TERMS,
     benchmarkProfiles: DEFAULT_BENCHMARK_PROFILES,
-    activeProfileId: DEFAULT_BENCHMARK_PROFILES[0].id
+    activeProfileId: DEFAULT_BENCHMARK_PROFILES[0].id,
+    aiProvider: 'gemini'
   };
 };
 

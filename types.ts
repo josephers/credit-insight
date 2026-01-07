@@ -77,8 +77,11 @@ export interface BenchmarkProfile {
   data: BenchmarkData;
 }
 
+export type AIProvider = 'gemini' | 'azure';
+
 export interface AppSettings {
   terms: StandardTerm[];
   benchmarkProfiles: BenchmarkProfile[];
   activeProfileId: string;
+  aiProvider: AIProvider;
 }

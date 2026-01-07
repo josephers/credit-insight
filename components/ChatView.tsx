@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, User, Bot, AlertTriangle, FileText, Sparkles } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { UploadedFile, ChatMessage } from '../types';
-import { sendChatMessage } from '../services/geminiService';
+import { UploadedFile, ChatMessage, AIProvider } from '../types';
+import { sendChatMessage } from '../services/aiService';
 import { SUGGESTED_QUESTIONS } from '../constants';
 
 interface ChatViewProps {
@@ -10,9 +10,10 @@ interface ChatViewProps {
   history: ChatMessage[];
   setHistory: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   borrowerName: string;
+  aiProvider: AIProvider;
 }
 
-export const ChatView: React.FC<ChatViewProps> = ({ file, history, setHistory, borrowerName }) => {
+export const ChatView: React.FC<ChatViewProps> = ({ file, history, setHistory, borrowerName, aiProvider }) => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -41,7 +42,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ file, history, setHistory, b
     setIsLoading(true);
 
     try {
-      const responseText = await sendChatMessage(file.data, file.type, history, userMsg.text);
+      const responseText = await sendChatMessage(file.data, file.type, history, userMsg.text, aiProvider);
       
       const botMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -54,7 +55,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ file, history, setHistory, b
       const errorMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        text: "I encountered an error analyzing the document. Please try again.",
+        text: `Error (${aiProvider}): I encountered an issue analyzing the document. Please check your keys or switch providers.`,
         timestamp: new Date(),
         isError: true
       };
@@ -80,7 +81,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ file, history, setHistory, b
         </div>
         <div>
            <h2 className="font-bold text-slate-800">Analyst Q&A: {borrowerName}</h2>
-           <p className="text-xs text-slate-500">Ask complex queries about {file.name}</p>
+           <p className="text-xs text-slate-500">Ask complex queries about {file.name} using {aiProvider === 'azure' ? 'Azure OpenAI' : 'Gemini'}</p>
         </div>
       </div>
 

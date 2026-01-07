@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Play, Download, ChevronDown, ChevronUp, Quote, AlertCircle, FileText, Scale, LayoutList, AlertTriangle, Globe, ExternalLink, RefreshCw } from 'lucide-react';
-import { StandardTerm, ExtractionResult, UploadedFile, BenchmarkResult, WebFinancialData } from '../types';
-import { extractAndBenchmark, fetchFinancialsFromWeb } from '../services/geminiService';
+import { StandardTerm, ExtractionResult, UploadedFile, BenchmarkResult, WebFinancialData, AIProvider } from '../types';
+import { extractAndBenchmark, fetchFinancialsFromWeb } from '../services/aiService';
 
 interface AnalysisViewProps {
   file: UploadedFile;
@@ -15,6 +15,7 @@ interface AnalysisViewProps {
   setBenchmarkResults: React.Dispatch<React.SetStateAction<BenchmarkResult[]>>;
   webFinancials?: { data: WebFinancialData[], sourceUrls: string[], lastUpdated: Date };
   setWebFinancials: (data: { data: WebFinancialData[], sourceUrls: string[], lastUpdated: Date }) => void;
+  aiProvider: AIProvider;
 }
 
 type Tab = 'terms' | 'covenants' | 'baskets' | 'benchmark' | 'financials';
@@ -30,7 +31,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   benchmarkResults,
   setBenchmarkResults,
   webFinancials,
-  setWebFinancials
+  setWebFinancials,
+  aiProvider
 }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isFetchingWeb, setIsFetchingWeb] = useState(false);
@@ -44,10 +46,10 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     setBenchmarkResults([]);
     
     try {
-      setStatusText('Analyzing document & Benchmarking...');
+      setStatusText(`Analyzing document using ${aiProvider === 'azure' ? 'Azure OpenAI' : 'Gemini'}...`);
       
       // Perform simultaneous extraction and benchmarking
-      const { extraction, benchmarking } = await extractAndBenchmark(file.data, file.type, terms);
+      const { extraction, benchmarking } = await extractAndBenchmark(file.data, file.type, terms, undefined, aiProvider);
       
       setResults(extraction);
       setBenchmarkResults(benchmarking);
@@ -60,7 +62,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
       
     } catch (e) {
       console.error(e);
-      alert("Analysis failed. Please try again.");
+      alert(`Analysis failed using ${aiProvider}. Please check your keys or try Gemini.`);
     } finally {
       setIsAnalyzing(false);
       setStatusText('');
@@ -75,15 +77,15 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     
     setIsFetchingWeb(true);
     try {
-      const result = await fetchFinancialsFromWeb(borrowerName);
+      const result = await fetchFinancialsFromWeb(borrowerName, aiProvider);
       setWebFinancials({
         data: result.data,
         sourceUrls: result.sourceUrls,
         lastUpdated: new Date()
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert("Failed to fetch financial data from web.");
+      alert(e.message || "Failed to fetch financial data from web.");
     } finally {
       setIsFetchingWeb(false);
     }
@@ -225,7 +227,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                 className="px-8 py-3 bg-brand-600 text-white rounded-lg font-medium shadow-md hover:bg-brand-700 transition-colors flex items-center gap-2"
               >
                 <Play className="w-5 h-5" />
-                Start Analysis
+                Start Analysis with {aiProvider === 'azure' ? 'Azure' : 'Gemini'}
               </button>
             </>
           )}
@@ -369,12 +371,13 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                 <p className="text-slate-500 text-sm">
                   Live data retrieved from SEC.gov and financial news via Google Search.
                 </p>
+                {aiProvider === 'azure' && <p className="text-xs text-red-500 mt-1">Not supported on Azure OpenAI</p>}
               </div>
               <button
                 onClick={handleFetchFinancials}
-                disabled={isFetchingWeb}
+                disabled={isFetchingWeb || aiProvider === 'azure'}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition-all ${
-                   isFetchingWeb ? 'bg-slate-200 text-slate-500 cursor-wait' : 'bg-brand-600 text-white hover:bg-brand-700'
+                   isFetchingWeb || aiProvider === 'azure' ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-brand-600 text-white hover:bg-brand-700'
                 }`}
               >
                 {isFetchingWeb ? (

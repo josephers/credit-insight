@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useRef } from 'react';
-import { Plus, Search, FileText, ChevronRight, Briefcase, Calendar, Trash2, Settings, Download, UploadCloud, Scale } from 'lucide-react';
-import { DealSession } from '../types';
+import { Plus, Search, FileText, ChevronRight, Briefcase, Calendar, Trash2, Settings, Download, UploadCloud, Scale, CloudCog } from 'lucide-react';
+import { DealSession, AIProvider } from '../types';
 import { exportDatabase, importDatabase } from '../services/db';
 
 interface DashboardProps {
@@ -11,6 +11,8 @@ interface DashboardProps {
   onManageBenchmarks: () => void;
   onDeleteSession: (sessionId: string) => void;
   onDataImported: () => void;
+  currentProvider: AIProvider;
+  onSetProvider: (provider: AIProvider) => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
@@ -20,7 +22,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onManageTerms,
   onManageBenchmarks,
   onDeleteSession,
-  onDataImported
+  onDataImported,
+  currentProvider,
+  onSetProvider
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -42,11 +46,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     
     const result: Record<string, DealSession[]> = {};
     Object.keys(groupedSessions).forEach(borrower => {
-      // Check if borrower name matches
       if (borrower.toLowerCase().includes(lowerTerm)) {
         result[borrower] = groupedSessions[borrower];
       } else {
-        // Check if any file in the group matches
         const matchingSessions = groupedSessions[borrower].filter(s => 
           s.file.name.toLowerCase().includes(lowerTerm)
         );
@@ -117,58 +119,45 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
         <div className="flex items-center gap-3">
            
+           {/* Provider Selector */}
+           <div className="flex items-center gap-2 mr-4 bg-slate-100 rounded-lg p-1 border border-slate-200">
+              <div className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                <CloudCog className="w-4 h-4" /> AI Provider
+              </div>
+              <select 
+                value={currentProvider} 
+                onChange={(e) => onSetProvider(e.target.value as AIProvider)}
+                className="bg-white border border-slate-300 rounded text-sm text-slate-700 py-1 pl-2 pr-6 outline-none focus:ring-1 focus:ring-brand-500"
+              >
+                <option value="gemini">Google Gemini 1.5</option>
+                <option value="azure">Azure OpenAI (GPT-4)</option>
+              </select>
+           </div>
+
            {/* Data Management Buttons */}
            <div className="flex items-center bg-slate-50 rounded-lg p-1 border border-slate-200 mr-2">
-             <button
-               onClick={handleExport}
-               className="p-2 text-slate-600 hover:text-brand-600 hover:bg-white rounded-md transition-all"
-               title="Export Portfolio to File (Share)"
-             >
+             <button onClick={handleExport} className="p-2 text-slate-600 hover:text-brand-600 hover:bg-white rounded-md transition-all" title="Export Portfolio">
                <Download className="w-4 h-4" />
              </button>
              <div className="w-px h-4 bg-slate-300 mx-1"></div>
-             <button
-               onClick={handleImportClick}
-               className="p-2 text-slate-600 hover:text-brand-600 hover:bg-white rounded-md transition-all"
-               title="Import Portfolio from File"
-             >
+             <button onClick={handleImportClick} className="p-2 text-slate-600 hover:text-brand-600 hover:bg-white rounded-md transition-all" title="Import Portfolio">
                <UploadCloud className="w-4 h-4" />
              </button>
-             <input 
-               type="file" 
-               ref={fileInputRef} 
-               onChange={handleFileChange} 
-               accept=".json" 
-               className="hidden" 
-             />
+             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
            </div>
            
            <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200">
-             <button 
-               onClick={onManageBenchmarks}
-               className="flex items-center gap-2 px-3 py-2 text-slate-600 bg-transparent hover:bg-white rounded-md hover:shadow-sm font-medium transition-all text-sm"
-               title="Edit Market Standards"
-             >
-               <Scale className="w-4 h-4" />
-               Benchmarks
+             <button onClick={onManageBenchmarks} className="flex items-center gap-2 px-3 py-2 text-slate-600 bg-transparent hover:bg-white rounded-md hover:shadow-sm font-medium transition-all text-sm" title="Edit Market Standards">
+               <Scale className="w-4 h-4" /> Benchmarks
              </button>
              <div className="w-px bg-slate-300 my-2"></div>
-             <button 
-               onClick={onManageTerms}
-               className="flex items-center gap-2 px-3 py-2 text-slate-600 bg-transparent hover:bg-white rounded-md hover:shadow-sm font-medium transition-all text-sm"
-               title="Edit Extraction Terms"
-             >
-               <Settings className="w-4 h-4" />
-               Terms
+             <button onClick={onManageTerms} className="flex items-center gap-2 px-3 py-2 text-slate-600 bg-transparent hover:bg-white rounded-md hover:shadow-sm font-medium transition-all text-sm" title="Edit Extraction Terms">
+               <Settings className="w-4 h-4" /> Terms
              </button>
            </div>
            
-           <button 
-             onClick={onNewAnalysis}
-             className="ml-2 flex items-center gap-2 px-6 py-2.5 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 shadow-sm transition-colors"
-           >
-             <Plus className="w-5 h-5" />
-             New Analysis
+           <button onClick={onNewAnalysis} className="ml-2 flex items-center gap-2 px-6 py-2.5 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 shadow-sm transition-colors">
+             <Plus className="w-5 h-5" /> New Analysis
            </button>
         </div>
       </div>
@@ -176,17 +165,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto p-8">
         <div className="max-w-6xl mx-auto">
-          
           {/* Search */}
           <div className="relative mb-8">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-            <input 
-              type="text" 
-              placeholder="Search by Borrower Name or Filename..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-xl shadow-sm text-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none placeholder:text-slate-300"
-            />
+            <input type="text" placeholder="Search by Borrower Name or Filename..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-xl shadow-sm text-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none placeholder:text-slate-300" />
           </div>
 
           {/* Empty State */}
@@ -196,22 +178,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <Briefcase className="w-10 h-10 text-slate-300" />
               </div>
               <h3 className="text-xl font-bold text-slate-700 mb-2">No Active Deals</h3>
-              <p className="text-slate-500 max-w-md mx-auto mb-8">
-                Upload a credit agreement to automatically create a new deal session and extract borrower details.
-              </p>
+              <p className="text-slate-500 max-w-md mx-auto mb-8">Upload a credit agreement to automatically create a new deal session and extract borrower details.</p>
               <div className="flex justify-center gap-4">
-                <button 
-                  onClick={onNewAnalysis}
-                  className="text-brand-600 font-semibold hover:text-brand-700 inline-flex items-center justify-center gap-2"
-                >
-                  Start your first analysis <ChevronRight className="w-4 h-4" />
-                </button>
-                <button 
-                  onClick={handleImportClick}
-                  className="text-slate-500 hover:text-slate-700 inline-flex items-center justify-center gap-2 text-sm underline"
-                >
-                  Import Backup
-                </button>
+                <button onClick={onNewAnalysis} className="text-brand-600 font-semibold hover:text-brand-700 inline-flex items-center justify-center gap-2">Start your first analysis <ChevronRight className="w-4 h-4" /></button>
+                <button onClick={handleImportClick} className="text-slate-500 hover:text-slate-700 inline-flex items-center justify-center gap-2 text-sm underline">Import Backup</button>
               </div>
             </div>
           )}
@@ -223,42 +193,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <h2 className="text-lg font-bold text-slate-800 mb-4 pl-1 flex items-center gap-2">
                   <span className="w-1.5 h-6 bg-brand-500 rounded-full"></span>
                   {borrower}
-                  <span className="text-xs font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full ml-2">
-                    {groupSessions.length} {groupSessions.length === 1 ? 'Doc' : 'Docs'}
-                  </span>
+                  <span className="text-xs font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full ml-2">{groupSessions.length} {groupSessions.length === 1 ? 'Doc' : 'Docs'}</span>
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                   {groupSessions.map(session => (
-                    <div 
-                      key={session.id}
-                      className="group bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-brand-200 transition-all overflow-hidden flex flex-col cursor-pointer relative"
-                      onClick={() => onSelectSession(session.id)}
-                    >
+                    <div key={session.id} className="group bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-brand-200 transition-all overflow-hidden flex flex-col cursor-pointer relative" onClick={() => onSelectSession(session.id)}>
                       <div className="p-5 flex-1">
                         <div className="flex items-start justify-between mb-3">
-                          <div className="p-2 bg-blue-50 text-brand-600 rounded-lg">
-                            <FileText className="w-6 h-6" />
-                          </div>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); onDeleteSession(session.id); }}
-                            className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
-                            title="Delete Session"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="p-2 bg-blue-50 text-brand-600 rounded-lg"><FileText className="w-6 h-6" /></div>
+                          <button onClick={(e) => { e.stopPropagation(); onDeleteSession(session.id); }} className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors" title="Delete Session"><Trash2 className="w-4 h-4" /></button>
                         </div>
-                        <h3 className="font-semibold text-slate-800 mb-1 line-clamp-1" title={session.file.name}>
-                          {session.file.name}
-                        </h3>
+                        <h3 className="font-semibold text-slate-800 mb-1 line-clamp-1" title={session.file.name}>{session.file.name}</h3>
                         <div className="flex items-center gap-2 text-xs text-slate-500 mt-4">
                            <Calendar className="w-3.5 h-3.5" />
                            {new Date(session.lastModified).toLocaleDateString()} 
                            <span className="text-slate-300">|</span>
-                           {session.extractionResults.length > 0 ? (
-                             <span className="text-green-600 font-medium">Analyzed</span>
-                           ) : (
-                             <span className="text-amber-600 font-medium">Pending Analysis</span>
-                           )}
+                           {session.extractionResults.length > 0 ? <span className="text-green-600 font-medium">Analyzed</span> : <span className="text-amber-600 font-medium">Pending Analysis</span>}
                         </div>
                       </div>
                       <div className="bg-slate-50 px-5 py-3 border-t border-slate-100 flex justify-between items-center group-hover:bg-brand-50/50 transition-colors">
