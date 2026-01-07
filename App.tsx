@@ -7,8 +7,8 @@ import { TermsManager } from './components/TermsManager';
 import { BenchmarkManager } from './components/BenchmarkManager';
 import { Dashboard } from './components/Dashboard';
 import { MatrixView } from './components/MatrixView';
-import { DEFAULT_TERMS, MARKET_BENCHMARK, MAX_FILE_SIZE_MB } from './constants';
-import { AppView, UploadedFile, StandardTerm, DealSession, BenchmarkData } from './types';
+import { DEFAULT_TERMS, DEFAULT_BENCHMARK_PROFILES, MAX_FILE_SIZE_MB } from './constants';
+import { AppView, UploadedFile, StandardTerm, DealSession, BenchmarkData, BenchmarkProfile } from './types';
 import { getAllSessions, saveSession, deleteSessionById } from './services/db';
 import { getSettings, saveSettings } from './services/settings';
 import { extractAndBenchmark } from './services/geminiService';
@@ -22,13 +22,15 @@ function App() {
   
   // Settings State
   const [terms, setTerms] = useState<StandardTerm[]>(DEFAULT_TERMS);
-  const [benchmarks, setBenchmarks] = useState<BenchmarkData>(MARKET_BENCHMARK);
+  const [benchmarkProfiles, setBenchmarkProfiles] = useState<BenchmarkProfile[]>(DEFAULT_BENCHMARK_PROFILES);
+  const [activeProfileId, setActiveProfileId] = useState<string>(DEFAULT_BENCHMARK_PROFILES[0].id);
   
   // UI State
   const [showDocPreview, setShowDocPreview] = useState(true);
 
   // Derived State
   const activeSession = sessions.find(s => s.id === activeSessionId) || null;
+  const activeBenchmarkData = benchmarkProfiles.find(p => p.id === activeProfileId)?.data || DEFAULT_BENCHMARK_PROFILES[0].data;
 
   const refreshSessions = useCallback(async () => {
     setIsLoadingDB(true);
@@ -38,7 +40,8 @@ function App() {
       
       const loadedSettings = await getSettings();
       setTerms(loadedSettings.terms);
-      setBenchmarks(loadedSettings.benchmarks);
+      setBenchmarkProfiles(loadedSettings.benchmarkProfiles);
+      setActiveProfileId(loadedSettings.activeProfileId);
     } catch (err) {
       console.error("Failed to load data:", err);
     } finally {
@@ -55,9 +58,9 @@ function App() {
   useEffect(() => {
     // Avoid saving initial load if it's just defaults, but simple save is fine
     if (!isLoadingDB) {
-       saveSettings({ terms, benchmarks });
+       saveSettings({ terms, benchmarkProfiles, activeProfileId });
     }
-  }, [terms, benchmarks, isLoadingDB]);
+  }, [terms, benchmarkProfiles, activeProfileId, isLoadingDB]);
 
   // Handlers
   const handleFileSelect = async (uploadedFile: UploadedFile) => {
@@ -122,7 +125,7 @@ function App() {
           };
 
           // 2. Extract Terms AND Benchmark (One Shot) - PASSING DYNAMIC BENCHMARKS
-          const { extraction, benchmarking } = await extractAndBenchmark(uploadedFile.data, uploadedFile.type, terms, benchmarks);
+          const { extraction, benchmarking } = await extractAndBenchmark(uploadedFile.data, uploadedFile.type, terms, activeBenchmarkData);
           newSession.extractionResults = extraction;
           newSession.benchmarkResults = benchmarking;
 
@@ -147,7 +150,7 @@ function App() {
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
-  }, [terms, benchmarks]);
+  }, [terms, activeBenchmarkData]);
 
   const handleSessionSelect = (sessionId: string) => {
     setActiveSessionId(sessionId);
@@ -179,6 +182,16 @@ function App() {
       });
       return updatedSessions;
     });
+  };
+
+  // Helper to update specific benchmark data
+  const handleUpdateBenchmarks = (data: BenchmarkData) => {
+    setBenchmarkProfiles(prev => prev.map(p => {
+      if (p.id === activeProfileId) {
+        return { ...p, data };
+      }
+      return p;
+    }));
   };
 
   // Render logic
@@ -213,7 +226,10 @@ function App() {
           <MatrixView 
              sessions={sessions}
              terms={terms}
-             benchmarks={benchmarks}
+             benchmarkProfiles={benchmarkProfiles}
+             activeProfileId={activeProfileId}
+             setActiveProfileId={setActiveProfileId}
+             onUpdateBenchmarkData={handleUpdateBenchmarks}
              onAnalyzeFile={handleMatrixFileAnalyze}
              onRemoveSession={handleDeleteSession}
           />
@@ -247,8 +263,10 @@ function App() {
       case AppView.BENCHMARKS:
         return (
           <BenchmarkManager
-            benchmarks={benchmarks}
-            setBenchmarks={setBenchmarks}
+            profiles={benchmarkProfiles}
+            setProfiles={setBenchmarkProfiles}
+            activeProfileId={activeProfileId}
+            setActiveProfileId={setActiveProfileId}
             terms={terms}
             onBack={() => setCurrentView(AppView.DASHBOARD)}
           />

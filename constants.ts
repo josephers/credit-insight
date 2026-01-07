@@ -1,4 +1,4 @@
-import { StandardTerm } from './types';
+import { StandardTerm, BenchmarkProfile } from './types';
 
 export const DEFAULT_TERMS: StandardTerm[] = [
   // General
@@ -48,6 +48,37 @@ export const MARKET_BENCHMARK = {
   'Governing Law': 'New York',
   'Starter Basket Amount': '$10,000,000'
 };
+
+export const DEFAULT_BENCHMARK_PROFILES: BenchmarkProfile[] = [
+  {
+    id: 'us_large_cap',
+    name: 'US Large Cap (Standard)',
+    data: MARKET_BENCHMARK
+  },
+  {
+    id: 'us_middle_market',
+    name: 'US Middle Market',
+    data: {
+      ...MARKET_BENCHMARK,
+      'Max Total Net Leverage': '3.50x',
+      'Min Interest Coverage': '3.00x',
+      'General RP Basket': '$5,000,000',
+      'Starter Basket Amount': '$0',
+      'Events of Default': 'Tightened cure periods'
+    }
+  },
+  {
+    id: 'canada_standard',
+    name: 'Canada Standard',
+    data: {
+      ...MARKET_BENCHMARK,
+      'Governing Law': 'Ontario / Canadian Federal',
+      'Max Total Net Leverage': '4.00x',
+      'General RP Basket': 'CAD $10,000,000',
+      'Starter Basket Amount': 'CAD $5,000,000'
+    }
+  }
+];
 
 export const MAX_FILE_SIZE_MB = 20;
 

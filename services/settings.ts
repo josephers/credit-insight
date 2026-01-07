@@ -1,5 +1,5 @@
-import { AppSettings, StandardTerm, BenchmarkData } from '../types';
-import { DEFAULT_TERMS, MARKET_BENCHMARK } from '../constants';
+import { AppSettings, StandardTerm, BenchmarkData, BenchmarkProfile } from '../types';
+import { DEFAULT_TERMS, DEFAULT_BENCHMARK_PROFILES, MARKET_BENCHMARK } from '../constants';
 
 const API_URL = '/api/settings';
 
@@ -9,9 +9,23 @@ export const getSettings = async (): Promise<AppSettings> => {
     if (response.ok) {
       const json = await response.json();
       if (json) {
+        // Migration logic for old settings format
+        let profiles = json.benchmarkProfiles;
+        let activeId = json.activeProfileId;
+
+        // If no profiles but legacy benchmarks exist
+        if (!profiles && json.benchmarks) {
+          profiles = [
+            { id: 'legacy', name: 'Imported Defaults', data: json.benchmarks },
+            ...DEFAULT_BENCHMARK_PROFILES.filter(p => p.id !== 'us_large_cap') // Add others
+          ];
+          activeId = 'legacy';
+        }
+
         return {
             terms: json.terms || DEFAULT_TERMS,
-            benchmarks: json.benchmarks || MARKET_BENCHMARK
+            benchmarkProfiles: profiles || DEFAULT_BENCHMARK_PROFILES,
+            activeProfileId: activeId || DEFAULT_BENCHMARK_PROFILES[0].id
         };
       }
     }
@@ -22,7 +36,8 @@ export const getSettings = async (): Promise<AppSettings> => {
   // Return defaults if fetch fails or no file exists
   return {
     terms: DEFAULT_TERMS,
-    benchmarks: MARKET_BENCHMARK
+    benchmarkProfiles: DEFAULT_BENCHMARK_PROFILES,
+    activeProfileId: DEFAULT_BENCHMARK_PROFILES[0].id
   };
 };
 

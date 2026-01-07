@@ -1,11 +1,14 @@
 import React, { useState, useMemo } from 'react';
-import { Upload, X, CheckCircle, AlertTriangle, AlertCircle, LayoutGrid, FileText, Plus, GripVertical } from 'lucide-react';
-import { DealSession, StandardTerm, BenchmarkData } from '../types';
+import { Upload, X, CheckCircle, AlertTriangle, AlertCircle, LayoutGrid, FileText, Plus, ChevronDown } from 'lucide-react';
+import { DealSession, StandardTerm, BenchmarkData, BenchmarkProfile } from '../types';
 
 interface MatrixViewProps {
   sessions: DealSession[];
   terms: StandardTerm[];
-  benchmarks: BenchmarkData;
+  benchmarkProfiles: BenchmarkProfile[];
+  activeProfileId: string;
+  setActiveProfileId: (id: string) => void;
+  onUpdateBenchmarkData: (data: BenchmarkData) => void;
   onAnalyzeFile: (file: File) => Promise<void>;
   onRemoveSession: (id: string) => void;
 }
@@ -13,7 +16,10 @@ interface MatrixViewProps {
 export const MatrixView: React.FC<MatrixViewProps> = ({ 
   sessions, 
   terms, 
-  benchmarks,
+  benchmarkProfiles,
+  activeProfileId,
+  setActiveProfileId,
+  onUpdateBenchmarkData,
   onAnalyzeFile,
   onRemoveSession 
 }) => {
@@ -36,6 +42,9 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
   const selectedSessions = useMemo(() => 
     sessions.filter(s => selectedSessionIds.includes(s.id)),
   [sessions, selectedSessionIds]);
+  
+  const activeProfile = benchmarkProfiles.find(p => p.id === activeProfileId) || benchmarkProfiles[0];
+  const benchmarks = activeProfile.data;
 
   // Drag Handlers
   const handleDragOver = (e: React.DragEvent) => {
@@ -60,8 +69,6 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
     setIsProcessing(true);
     try {
       await onAnalyzeFile(file);
-      // The parent component should update 'sessions'. 
-      // We'll rely on useEffect or manual addition if we want to auto-select the new one.
     } catch (error) {
       console.error("Drop processing failed", error);
       alert("Failed to process dropped file.");
@@ -76,6 +83,13 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
     } else {
       setSelectedSessionIds(prev => [...prev, id]);
     }
+  };
+
+  const handleBenchmarkChange = (term: string, value: string) => {
+    onUpdateBenchmarkData({
+      ...benchmarks,
+      [term]: value
+    });
   };
 
   const getVarianceColor = (variance?: 'Green' | 'Yellow' | 'Red') => {
@@ -170,8 +184,22 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
                     Terms / Feature
                   </th>
                   {/* Benchmark Column */}
-                  <th scope="col" className="sticky top-0 z-20 bg-slate-50 px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-64 border-b border-slate-200">
-                     Market Standard (Benchmark)
+                  <th scope="col" className="sticky top-0 z-20 bg-slate-50 px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-64 border-b border-slate-200 min-w-[200px]">
+                     <div className="flex flex-col gap-1">
+                       <span>Benchmark</span>
+                       <div className="relative">
+                         <select 
+                            value={activeProfileId}
+                            onChange={(e) => setActiveProfileId(e.target.value)}
+                            className="w-full bg-slate-100 border-none rounded text-xs text-slate-700 py-1 pl-2 pr-6 cursor-pointer focus:ring-2 focus:ring-brand-500"
+                         >
+                           {benchmarkProfiles.map(p => (
+                             <option key={p.id} value={p.id}>{p.name}</option>
+                           ))}
+                         </select>
+                         <ChevronDown className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                       </div>
+                     </div>
                   </th>
                   {/* Deal Columns */}
                   {selectedSessions.map(session => (
@@ -206,18 +234,24 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
                     {/* Term Rows */}
                     {catTerms.map(term => {
                       // Get benchmark value
-                      const benchmarkVal = benchmarks[term.name as keyof typeof benchmarks] || 'N/A';
+                      const benchmarkVal = benchmarks[term.name as keyof typeof benchmarks] || '';
                       
                       return (
-                        <tr key={term.id} className="hover:bg-slate-50/50 transition-colors">
+                        <tr key={term.id} className="hover:bg-slate-50/50 transition-colors group/row">
                           <td className="sticky left-0 z-10 bg-white px-6 py-4 text-sm font-medium text-slate-900 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                             {term.name}
                             <p className="text-[10px] text-slate-400 font-normal mt-0.5 line-clamp-1">{term.description}</p>
                           </td>
                           
-                          {/* Benchmark Cell */}
-                          <td className="px-6 py-4 text-sm text-slate-500 bg-slate-50/30 font-mono border-r border-slate-100">
-                            {benchmarkVal}
+                          {/* Benchmark Cell - Editable */}
+                          <td className="px-6 py-4 text-sm text-slate-500 bg-slate-50/30 font-mono border-r border-slate-100 p-0">
+                            <input 
+                              type="text"
+                              value={benchmarkVal}
+                              onChange={(e) => handleBenchmarkChange(term.name, e.target.value)}
+                              placeholder="-"
+                              className="w-full h-full bg-transparent px-2 py-1 border border-transparent hover:border-slate-300 focus:border-brand-500 focus:bg-white focus:ring-0 rounded outline-none transition-all text-sm font-mono text-slate-700"
+                            />
                           </td>
 
                           {/* Deal Cells */}

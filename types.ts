@@ -71,7 +71,14 @@ export enum AppView {
 
 export type BenchmarkData = Record<string, string>;
 
+export interface BenchmarkProfile {
+  id: string;
+  name: string;
+  data: BenchmarkData;
+}
+
 export interface AppSettings {
   terms: StandardTerm[];
-  benchmarks: BenchmarkData;
+  benchmarkProfiles: BenchmarkProfile[];
+  activeProfileId: string;
 }
