@@ -110,7 +110,7 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
       await onRebenchmarkSessions(selectedSessionIds);
     } catch (error) {
       console.error("Rebenchmark failed", error);
-      alert("Failed to update variances.");
+      alert("Failed to re-run Benchmark Analysis.");
     } finally {
       setIsRebenchmarking(false);
     }
@@ -190,7 +190,7 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
             title="Recalculate colors based on current benchmark values"
           >
              <RefreshCw className={`w-4 h-4 ${isRebenchmarking ? 'animate-spin' : ''}`} />
-             Update Variances
+             Re-run Benchmark Analysis
           </button>
 
           {/* Session Selector */}
@@ -250,7 +250,7 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
                          <select 
                             value={activeProfileId}
                             onChange={(e) => setActiveProfileId(e.target.value)}
-                            className="w-full bg-slate-100 border-none rounded text-xs text-slate-700 py-1 pl-2 pr-6 cursor-pointer focus:ring-2 focus:ring-brand-500"
+                            className="w-full bg-slate-100 border-none rounded text-xs text-slate-700 py-1 pl-2 pr-6 cursor-pointer focus:ring-2 focus:ring-brand-500 appearance-none"
                          >
                            {benchmarkProfiles.map(p => (
                              <option key={p.id} value={p.id}>{p.name}</option>

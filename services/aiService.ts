@@ -22,39 +22,6 @@ const AZURE_KEY = process.env.AZURE_OPENAI_API_KEY;
 const AZURE_DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT;
 
 /**
- * Helper: Decode and Log JWT details for debugging Audience/Auth issues.
- */
-const debugJwtToken = (token: string) => {
-  try {
-    const parts = token.split('.');
-    if (parts.length < 2) return; // Not a JWT
-
-    const base64Url = parts[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-
-    const payload = JSON.parse(jsonPayload);
-    
-    console.groupCollapsed("🔐 Azure AD Token Debug");
-    console.log("Audience (aud):", payload.aud);
-    console.log("Issuer (iss):", payload.iss);
-    console.log("Expiration:", new Date(payload.exp * 1000));
-    console.log("Scopes (scp):", payload.scp);
-    
-    const expectedAudience = "https://cognitiveservices.azure.com";
-    if (payload.aud !== expectedAudience) {
-      console.warn(`⚠️ AUDIENCE MISMATCH? Azure usually expects '${expectedAudience}', but token has '${payload.aud}'.`);
-      console.info(`💡 SOLUTION: Generate token with: az account get-access-token --scope https://cognitiveservices.azure.com/.default`);
-    }
-    console.groupEnd();
-  } catch (e) {
-    // Silent fail for non-JWT tokens
-  }
-};
-
-/**
  * Try to fetch a fresh token from the backend middleware (Vite dev server).
  */
 const fetchDynamicAzureToken = async (): Promise<string | null> => {
@@ -93,7 +60,6 @@ const getAzureHeaders = async () => {
   }
 
   if (token) {
-    debugJwtToken(token);
     headers['Authorization'] = `Bearer ${token}`;
   } else if (AZURE_KEY) {
     headers['api-key'] = AZURE_KEY;

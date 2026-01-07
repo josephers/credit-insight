@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, AlertTriangle, FileText, Sparkles, MessageSquare, Search } from 'lucide-react';
+import { Send, User, Bot, AlertTriangle, FileText, Sparkles, MessageSquare, Search, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { UploadedFile, ChatMessage, AIProvider, DealSession } from '../types';
 import { sendChatMessage } from '../services/aiService';
@@ -83,6 +83,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
       onUpdateHistory(activeSession.id, (prev) => [...prev, errorMsg]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleClearHistory = () => {
+    if (!activeSession) return;
+    if (confirm('Are you sure you want to clear the chat history for this deal? This action cannot be undone.')) {
+      onUpdateHistory(activeSession.id, () => []);
     }
   };
 
@@ -174,6 +181,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
                    </p>
                 </div>
               </div>
+              
+              {history.length > 0 && (
+                <button
+                  onClick={handleClearHistory}
+                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  title="Clear Chat History"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              )}
             </div>
 
             {/* Messages */}
