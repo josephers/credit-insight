@@ -9,7 +9,7 @@ import { MatrixView } from './components/MatrixView';
 import { DEFAULT_TERMS, MAX_FILE_SIZE_MB } from './constants';
 import { AppView, UploadedFile, StandardTerm, DealSession } from './types';
 import { getAllSessions, saveSession, deleteSessionById } from './services/db';
-import { extractTermsFromDocument, compareWithBenchmark } from './services/geminiService';
+import { extractAndBenchmark } from './services/geminiService';
 
 function App() {
   // Global State
@@ -104,23 +104,20 @@ function App() {
             lastModified: new Date()
           };
 
-          // 2. Extract Terms
-          const extractionResults = await extractTermsFromDocument(uploadedFile.data, uploadedFile.type, terms);
-          newSession.extractionResults = extractionResults;
+          // 2. Extract Terms AND Benchmark (One Shot)
+          const { extraction, benchmarking } = await extractAndBenchmark(uploadedFile.data, uploadedFile.type, terms);
+          newSession.extractionResults = extraction;
+          newSession.benchmarkResults = benchmarking;
 
           // Update Borrower Name
-          const borrowerTerm = extractionResults.find(r => r.term === 'Borrower Name');
+          const borrowerTerm = extraction.find(r => r.term === 'Borrower Name');
           if (borrowerTerm && borrowerTerm.value && borrowerTerm.value !== 'Not Found') {
             newSession.borrowerName = borrowerTerm.value;
           } else {
             newSession.borrowerName = file.name.replace(/\.[^/.]+$/, ""); // Fallback to filename
           }
 
-          // 3. Benchmark
-          const benchmarkResults = await compareWithBenchmark(extractionResults);
-          newSession.benchmarkResults = benchmarkResults;
-
-          // 4. Save
+          // 3. Save
           setSessions(prev => [newSession, ...prev]);
           await saveSession(newSession);
           

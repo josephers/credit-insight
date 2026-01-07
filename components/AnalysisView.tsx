@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Play, Download, ChevronDown, ChevronUp, Quote, AlertCircle, FileText, Scale, LayoutList, AlertTriangle, Globe, ExternalLink, RefreshCw } from 'lucide-react';
 import { StandardTerm, ExtractionResult, UploadedFile, BenchmarkResult, WebFinancialData } from '../types';
-import { extractTermsFromDocument, compareWithBenchmark, fetchFinancialsFromWeb } from '../services/geminiService';
+import { extractAndBenchmark, fetchFinancialsFromWeb } from '../services/geminiService';
 
 interface AnalysisViewProps {
   file: UploadedFile;
@@ -44,21 +44,19 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     setBenchmarkResults([]);
     
     try {
-      // Step 1: Extraction
-      setStatusText('Extracting structured terms...');
-      const extracted = await extractTermsFromDocument(file.data, file.type, terms);
-      setResults(extracted);
+      setStatusText('Analyzing document & Benchmarking...');
+      
+      // Perform simultaneous extraction and benchmarking
+      const { extraction, benchmarking } = await extractAndBenchmark(file.data, file.type, terms);
+      
+      setResults(extraction);
+      setBenchmarkResults(benchmarking);
 
       // Auto-update Borrower Name if found
-      const borrowerTerm = extracted.find(r => r.term === 'Borrower Name');
+      const borrowerTerm = extraction.find(r => r.term === 'Borrower Name');
       if (borrowerTerm && borrowerTerm.value && borrowerTerm.value !== 'Not Found') {
         onUpdateBorrowerName(borrowerTerm.value);
       }
-      
-      // Step 2: Benchmarking (Immediate)
-      setStatusText('Running market benchmark comparison...');
-      const benchmarkData = await compareWithBenchmark(extracted);
-      setBenchmarkResults(benchmarkData);
       
     } catch (e) {
       console.error(e);
