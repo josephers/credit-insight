@@ -25,6 +25,38 @@ export default defineConfig(({ mode }) => {
             const settingsPath = path.resolve('credit_insight_settings.json');
             handleJsonFileRequest(req, res, next, settingsPath);
           });
+
+          // Middleware for Azure Auth Token
+          server.middlewares.use('/api/auth/azure-token', async (req, res, next) => {
+            try {
+              // Dynamically import @azure/identity so build doesn't fail if user hasn't installed it yet
+              // This allows the app to function with just API Keys if preferred.
+              const { DefaultAzureCredential } = await import('@azure/identity');
+              
+              const credential = new DefaultAzureCredential();
+              // The scope for Azure OpenAI is strictly the Cognitive Services endpoint
+              const scope = "https://cognitiveservices.azure.com/.default";
+              
+              console.log("Refreshing Azure Access Token via DefaultAzureCredential...");
+              const tokenResponse = await credential.getToken(scope);
+
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ 
+                token: tokenResponse.token, 
+                expiresOn: tokenResponse.expiresOnTimestamp 
+              }));
+            } catch (err: any) {
+              // If package is missing or auth fails, return 500 so frontend falls back to ENV var
+              const msg = err.code === 'ERR_MODULE_NOT_FOUND' 
+                ? "Missing @azure/identity package." 
+                : err.message;
+              
+              console.warn("Azure Token Refresh Failed:", msg);
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: msg }));
+            }
+          });
         }
       }
     ],

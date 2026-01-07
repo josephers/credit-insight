@@ -17,7 +17,6 @@ const GEMINI_MODEL = 'gemini-3-flash-preview';
 // Azure Config
 const AZURE_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT;
 const AZURE_KEY = process.env.AZURE_OPENAI_API_KEY;
-const AZURE_AD_TOKEN = process.env.AZURE_OPENAI_AD_TOKEN;
 const AZURE_DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT;
 
 /**
@@ -25,9 +24,10 @@ const AZURE_DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT;
  */
 const debugJwtToken = (token: string) => {
   try {
-    const base64Url = token.split('.')[1];
-    if (!base64Url) return;
-    
+    const parts = token.split('.');
+    if (parts.length < 2) return; // Not a JWT
+
+    const base64Url = parts[1];
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
     const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
         return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
@@ -44,29 +44,59 @@ const debugJwtToken = (token: string) => {
     const expectedAudience = "https://cognitiveservices.azure.com";
     if (payload.aud !== expectedAudience) {
       console.warn(`⚠️ AUDIENCE MISMATCH? Azure usually expects '${expectedAudience}', but token has '${payload.aud}'.`);
+      console.info(`💡 SOLUTION: Generate token with: az account get-access-token --scope https://cognitiveservices.azure.com/.default`);
     }
     console.groupEnd();
   } catch (e) {
-    console.warn("Failed to decode debug token info", e);
+    // Silent fail for non-JWT tokens
   }
 };
 
 /**
- * Helper: Generate Azure Headers based on available Auth method.
- * Prioritizes Entra ID (AD Token) if available, otherwise falls back to API Key.
+ * Try to fetch a fresh token from the backend middleware (Vite dev server).
  */
-const getAzureHeaders = () => {
+const fetchDynamicAzureToken = async (): Promise<string | null> => {
+  try {
+    const res = await fetch('/api/auth/azure-token');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.token) {
+        return data.token;
+      }
+    }
+  } catch (e) {
+    // Ignore errors, we will fallback to ENV
+  }
+  return null;
+};
+
+/**
+ * Helper: Generate Azure Headers based on available Auth method.
+ * Prioritizes:
+ * 1. Fresh Token from Backend (Azure Identity / Auto-refresh)
+ * 2. Static Env Token (AZURE_OPENAI_AD_TOKEN)
+ * 3. API Key (AZURE_OPENAI_API_KEY)
+ */
+const getAzureHeaders = async () => {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
-  if (AZURE_AD_TOKEN) {
-    debugJwtToken(AZURE_AD_TOKEN); // Log token details to console
-    headers['Authorization'] = `Bearer ${AZURE_AD_TOKEN}`;
+  // 1. Try dynamic token first
+  let token = await fetchDynamicAzureToken();
+
+  // 2. Fallback to static env token
+  if (!token && process.env.AZURE_OPENAI_AD_TOKEN) {
+    token = process.env.AZURE_OPENAI_AD_TOKEN;
+  }
+
+  if (token) {
+    debugJwtToken(token);
+    headers['Authorization'] = `Bearer ${token}`;
   } else if (AZURE_KEY) {
     headers['api-key'] = AZURE_KEY;
   } else {
-    throw new Error("Missing Azure configuration. Please set AZURE_OPENAI_AD_TOKEN or AZURE_OPENAI_API_KEY.");
+    throw new Error("Missing Azure configuration. Please set AZURE_OPENAI_API_KEY or ensure @azure/identity is configured.");
   }
 
   return headers;
@@ -182,8 +212,9 @@ export const extractAndBenchmark = async (
       if (!AZURE_ENDPOINT) throw new Error("Azure OpenAI Endpoint not configured");
 
       const textContent = await prepareContentForAzure(fileBase64, mimeType);
-      const headers = getAzureHeaders();
+      const headers = await getAzureHeaders();
       
+      // Removed 'temperature' for Azure to support Reasoning Models (o1) which don't support it.
       const response = await fetch(`${AZURE_ENDPOINT}/openai/deployments/${AZURE_DEPLOYMENT}/chat/completions?api-version=2024-02-15-preview`, {
         method: 'POST',
         headers: headers,
@@ -192,8 +223,7 @@ export const extractAndBenchmark = async (
             { role: 'system', content: systemPrompt + "\nRespond with a JSON object containing a key 'results' which is the array of items." },
             { role: 'user', content: `Analyze this credit agreement content:\n\n${textContent.substring(0, 100000)}` } // Truncate if too huge
           ],
-          response_format: { type: "json_object" },
-          temperature: 0
+          response_format: { type: "json_object" }
         })
       });
 
@@ -300,7 +330,8 @@ export const rebenchmarkTerms = async (
     let rawResults: any[] = [];
 
     if (provider === 'azure') {
-      const headers = getAzureHeaders();
+      const headers = await getAzureHeaders();
+      // Removed 'temperature' for Azure
       const response = await fetch(`${AZURE_ENDPOINT}/openai/deployments/${AZURE_DEPLOYMENT}/chat/completions?api-version=2024-02-15-preview`, {
         method: 'POST',
         headers: headers,
@@ -308,8 +339,7 @@ export const rebenchmarkTerms = async (
           messages: [
             { role: 'system', content: prompt + "\nRespond with a JSON object containing a key 'results'." },
           ],
-          response_format: { type: "json_object" },
-          temperature: 0
+          response_format: { type: "json_object" }
         })
       });
       
@@ -376,7 +406,7 @@ export const sendChatMessage = async (
   try {
     if (provider === 'azure') {
       const textContent = await prepareContentForAzure(fileBase64, mimeType);
-      const headers = getAzureHeaders();
+      const headers = await getAzureHeaders();
       
       const messages = [
         { role: 'system', content: systemContext },
@@ -385,10 +415,11 @@ export const sendChatMessage = async (
         { role: 'user', content: newMessage }
       ];
 
+      // Removed 'temperature' for Azure
       const response = await fetch(`${AZURE_ENDPOINT}/openai/deployments/${AZURE_DEPLOYMENT}/chat/completions?api-version=2024-02-15-preview`, {
         method: 'POST',
         headers: headers,
-        body: JSON.stringify({ messages, temperature: 0.7 })
+        body: JSON.stringify({ messages })
       });
       
       if (!response.ok) await handleAzureError(response);
