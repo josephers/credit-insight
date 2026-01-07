@@ -17,7 +17,28 @@ const GEMINI_MODEL = 'gemini-3-flash-preview';
 // Azure Config
 const AZURE_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT;
 const AZURE_KEY = process.env.AZURE_OPENAI_API_KEY;
+const AZURE_AD_TOKEN = process.env.AZURE_OPENAI_AD_TOKEN;
 const AZURE_DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT;
+
+/**
+ * Helper: Generate Azure Headers based on available Auth method.
+ * Prioritizes Entra ID (AD Token) if available, otherwise falls back to API Key.
+ */
+const getAzureHeaders = () => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (AZURE_AD_TOKEN) {
+    headers['Authorization'] = `Bearer ${AZURE_AD_TOKEN}`;
+  } else if (AZURE_KEY) {
+    headers['api-key'] = AZURE_KEY;
+  } else {
+    throw new Error("Missing Azure configuration. Please set AZURE_OPENAI_AD_TOKEN or AZURE_OPENAI_API_KEY.");
+  }
+
+  return headers;
+};
 
 /**
  * Helper to ensure MIME type is supported by Gemini.
@@ -112,24 +133,28 @@ export const extractAndBenchmark = async (
     let rawResults: any[] = [];
 
     if (provider === 'azure') {
-      if (!AZURE_ENDPOINT || !AZURE_KEY) throw new Error("Azure OpenAI not configured");
+      if (!AZURE_ENDPOINT) throw new Error("Azure OpenAI Endpoint not configured");
 
       const textContent = await prepareContentForAzure(fileBase64, mimeType);
+      const headers = getAzureHeaders();
       
       const response = await fetch(`${AZURE_ENDPOINT}/openai/deployments/${AZURE_DEPLOYMENT}/chat/completions?api-version=2024-02-15-preview`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'api-key': AZURE_KEY },
+        headers: headers,
         body: JSON.stringify({
           messages: [
             { role: 'system', content: systemPrompt + "\nRespond with a JSON object containing a key 'results' which is the array of items." },
-            { role: 'user', content: `Analyze this credit agreement content:\n\n${textContent.substring(0, 100000)}` } // Truncate if too huge, though 128k context helps
+            { role: 'user', content: `Analyze this credit agreement content:\n\n${textContent.substring(0, 100000)}` } // Truncate if too huge
           ],
           response_format: { type: "json_object" },
           temperature: 0
         })
       });
 
-      if (!response.ok) throw new Error(`Azure Error: ${response.statusText}`);
+      if (!response.ok) {
+         const errorText = await response.text();
+         throw new Error(`Azure Error: ${response.status} ${response.statusText} - ${errorText}`);
+      }
       const json = await response.json();
       const content = json.choices[0].message.content;
       rawResults = JSON.parse(content).results;
@@ -231,9 +256,10 @@ export const rebenchmarkTerms = async (
     let rawResults: any[] = [];
 
     if (provider === 'azure') {
+      const headers = getAzureHeaders();
       const response = await fetch(`${AZURE_ENDPOINT}/openai/deployments/${AZURE_DEPLOYMENT}/chat/completions?api-version=2024-02-15-preview`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'api-key': AZURE_KEY! },
+        headers: headers,
         body: JSON.stringify({
           messages: [
             { role: 'system', content: prompt + "\nRespond with a JSON object containing a key 'results'." },
@@ -242,7 +268,11 @@ export const rebenchmarkTerms = async (
           temperature: 0
         })
       });
-      if (!response.ok) throw new Error(`Azure Error: ${response.statusText}`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Azure Error: ${response.status} - ${errorText}`);
+      }
       const json = await response.json();
       rawResults = JSON.parse(json.choices[0].message.content).results;
 
@@ -304,6 +334,7 @@ export const sendChatMessage = async (
   try {
     if (provider === 'azure') {
       const textContent = await prepareContentForAzure(fileBase64, mimeType);
+      const headers = getAzureHeaders();
       
       const messages = [
         { role: 'system', content: systemContext },
@@ -314,11 +345,14 @@ export const sendChatMessage = async (
 
       const response = await fetch(`${AZURE_ENDPOINT}/openai/deployments/${AZURE_DEPLOYMENT}/chat/completions?api-version=2024-02-15-preview`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'api-key': AZURE_KEY! },
+        headers: headers,
         body: JSON.stringify({ messages, temperature: 0.7 })
       });
       
-      if (!response.ok) throw new Error(`Azure Error: ${response.statusText}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Azure Error: ${response.status} - ${errorText}`);
+      }
       const json = await response.json();
       return json.choices[0].message.content;
 
