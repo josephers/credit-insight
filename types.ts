@@ -64,4 +64,5 @@ export enum AppView {
   ANALYSIS = 'ANALYSIS',
   CHAT = 'CHAT',
   TERMS = 'TERMS',
+  MATRIX = 'MATRIX',
 }

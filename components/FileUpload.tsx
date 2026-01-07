@@ -28,14 +28,14 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onManageTe
       const lowerName = file.name.toLowerCase();
 
       // Fix for browsers detecting HTML/MHTML as multipart/related which Gemini rejects
-      if (mimeType === 'multipart/related') {
+      if (mimeType === 'multipart/related' || !mimeType) {
         mimeType = 'text/html';
       }
       
       // Force standard MIME types based on extension if explicit
       if (lowerName.endsWith('.txt')) {
         mimeType = 'text/plain';
-      } else if (lowerName.endsWith('.html') || lowerName.endsWith('.htm')) {
+      } else if (lowerName.endsWith('.html') || lowerName.endsWith('.htm') || lowerName.endsWith('.mhtml')) {
         mimeType = 'text/html';
       } else if (lowerName.endsWith('.pdf')) {
         mimeType = 'application/pdf';
@@ -60,7 +60,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onManageTe
           </div>
           <h2 className="text-3xl font-bold text-slate-900 mb-4">Upload Credit Agreement</h2>
           <p className="text-slate-600 mb-8">
-            Upload a PDF, Word, Text, or HTML document to begin RAG-based analysis. 
+            Upload a PDF, Word, Text, HTML, or MHTML document to begin RAG-based analysis. 
             We'll extract key terms and enable interactive chat.
           </p>
           
@@ -72,7 +72,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onManageTe
             <input 
               type="file" 
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              accept=".pdf,.docx,.doc,.txt,.html,.htm,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/html"
+              accept=".pdf,.docx,.doc,.txt,.html,.htm,.mhtml,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/html,multipart/related"
               onChange={handleFileChange}
             />
           </label>
@@ -87,7 +87,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onManageTe
              </button>
           </div>
           
-          <p className="mt-6 text-xs text-slate-400">Supported: PDF, DOCX, TXT, HTML (Max {MAX_FILE_SIZE_MB}MB)</p>
+          <p className="mt-6 text-xs text-slate-400">Supported: PDF, DOCX, TXT, HTML, MHTML (Max {MAX_FILE_SIZE_MB}MB)</p>
         </div>
       </div>
     </div>

@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, MessageSquareText, FileText, ChevronRight, X, AlertCircle, Settings, ArrowLeft } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { LayoutDashboard, MessageSquareText, FileText, ChevronRight, X, AlertCircle, Settings, ArrowLeft, LayoutGrid } from 'lucide-react';
 import { FileUpload } from './components/FileUpload';
 import { AnalysisView } from './components/AnalysisView';
 import { ChatView } from './components/ChatView';
 import { TermsManager } from './components/TermsManager';
 import { Dashboard } from './components/Dashboard';
-import { DEFAULT_TERMS } from './constants';
+import { MatrixView } from './components/MatrixView';
+import { DEFAULT_TERMS, MAX_FILE_SIZE_MB } from './constants';
 import { AppView, UploadedFile, StandardTerm, DealSession } from './types';
 import { getAllSessions, saveSession, deleteSessionById } from './services/db';
+import { extractTermsFromDocument, compareWithBenchmark } from './services/geminiService';
 
 function App() {
   // Global State
@@ -61,6 +63,78 @@ function App() {
     await saveSession(newSession);
   };
 
+  /**
+   * Special handler for Matrix view drag-and-drop.
+   * Uploads, Extracts, Benchmarks, and Saves automatically.
+   */
+  const handleMatrixFileAnalyze = useCallback(async (file: File) => {
+    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      alert(`File size exceeds ${MAX_FILE_SIZE_MB}MB limit.`);
+      return;
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const base64String = (e.target?.result as string).split(',')[1];
+          
+          let mimeType = file.type;
+          const lowerName = file.name.toLowerCase();
+          if (mimeType === 'multipart/related' || !mimeType) mimeType = 'text/html';
+          if (lowerName.endsWith('.txt')) mimeType = 'text/plain';
+          else if (lowerName.endsWith('.html') || lowerName.endsWith('.htm') || lowerName.endsWith('.mhtml')) mimeType = 'text/html';
+          else if (lowerName.endsWith('.pdf')) mimeType = 'application/pdf';
+
+          const uploadedFile: UploadedFile = {
+            name: file.name,
+            type: mimeType || 'text/plain',
+            data: base64String,
+            size: file.size
+          };
+
+          // 1. Create Session
+          const newSession: DealSession = {
+            id: Date.now().toString(),
+            borrowerName: 'Analyzing...',
+            file: uploadedFile,
+            extractionResults: [],
+            benchmarkResults: [],
+            chatHistory: [],
+            lastModified: new Date()
+          };
+
+          // 2. Extract Terms
+          const extractionResults = await extractTermsFromDocument(uploadedFile.data, uploadedFile.type, terms);
+          newSession.extractionResults = extractionResults;
+
+          // Update Borrower Name
+          const borrowerTerm = extractionResults.find(r => r.term === 'Borrower Name');
+          if (borrowerTerm && borrowerTerm.value && borrowerTerm.value !== 'Not Found') {
+            newSession.borrowerName = borrowerTerm.value;
+          } else {
+            newSession.borrowerName = file.name.replace(/\.[^/.]+$/, ""); // Fallback to filename
+          }
+
+          // 3. Benchmark
+          const benchmarkResults = await compareWithBenchmark(extractionResults);
+          newSession.benchmarkResults = benchmarkResults;
+
+          // 4. Save
+          setSessions(prev => [newSession, ...prev]);
+          await saveSession(newSession);
+          
+          resolve();
+        } catch (err) {
+          console.error("Matrix auto-analyze failed:", err);
+          reject(err);
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }, [terms]);
+
   const handleSessionSelect = (sessionId: string) => {
     setActiveSessionId(sessionId);
     setCurrentView(AppView.ANALYSIS);
@@ -68,13 +142,11 @@ function App() {
 
   const handleDeleteSession = async (sessionId: string) => {
     if (confirm('Are you sure you want to delete this deal session?')) {
-      // Update UI immediately
       setSessions(prev => prev.filter(s => s.id !== sessionId));
       if (activeSessionId === sessionId) {
         setActiveSessionId(null);
         setCurrentView(AppView.DASHBOARD);
       }
-      // Update DB
       await deleteSessionById(sessionId);
     }
   };
@@ -82,12 +154,10 @@ function App() {
   const handleUpdateActiveSession = async (updates: Partial<DealSession>) => {
     if (!activeSessionId) return;
 
-    // Use a functional update to get the latest state and find the session to update
     setSessions(prev => {
       const updatedSessions = prev.map(s => {
         if (s.id === activeSessionId) {
           const updatedSession = { ...s, ...updates, lastModified: new Date() };
-          // Fire and forget save to DB
           saveSession(updatedSession).catch(err => console.error("Failed to autosave:", err));
           return updatedSession;
         }
@@ -95,11 +165,6 @@ function App() {
       });
       return updatedSessions;
     });
-  };
-
-  const handleCloseSession = () => {
-    setActiveSessionId(null);
-    setCurrentView(AppView.DASHBOARD);
   };
 
   // Render logic
@@ -124,6 +189,16 @@ function App() {
             onNewAnalysis={() => setCurrentView(AppView.UPLOAD)}
             onManageTerms={() => setCurrentView(AppView.TERMS)}
             onDeleteSession={handleDeleteSession}
+          />
+        );
+      
+      case AppView.MATRIX:
+        return (
+          <MatrixView 
+             sessions={sessions}
+             terms={terms}
+             onAnalyzeFile={handleMatrixFileAnalyze}
+             onRemoveSession={handleDeleteSession}
           />
         );
       
@@ -185,19 +260,14 @@ function App() {
     }
   };
 
-  // No active session means we are in Dashboard, Upload, or Terms (from Dashboard)
-  if (!activeSession) {
-    return (
-      <div className="h-full w-full bg-slate-50">
-        {renderContent()}
-      </div>
-    );
-  }
+  // Sidebar Logic
+  // Determine if we show Sidebar. Always show Sidebar.
+  // Content Logic:
+  // If activeSession, show 2-pane (if not Terms/Matrix).
+  // If no activeSession (Dashboard, Matrix), show 1-pane.
 
-  // Active Session Layout
-  const isPreviewable = activeSession.file.type === 'application/pdf' || 
-                        activeSession.file.type === 'text/plain' || 
-                        activeSession.file.type === 'text/html';
+  const isWideView = currentView === AppView.MATRIX || currentView === AppView.DASHBOARD || currentView === AppView.UPLOAD || currentView === AppView.TERMS;
+  const showSidebar = true;
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100">
@@ -205,39 +275,73 @@ function App() {
       {/* Sidebar Navigation */}
       <div className="w-16 md:w-20 bg-slate-900 flex flex-col items-center py-6 gap-6 z-20 flex-shrink-0 shadow-lg">
         <div 
-          onClick={() => setCurrentView(AppView.DASHBOARD)}
+          onClick={() => { setActiveSessionId(null); setCurrentView(AppView.DASHBOARD); }}
           className="w-10 h-10 bg-brand-600 rounded-xl flex items-center justify-center mb-4 shadow-brand-glow cursor-pointer hover:bg-brand-500 transition-colors"
           title="Back to Dashboard"
         >
           <FileText className="text-white w-6 h-6" />
         </div>
         
-        <button
-          onClick={() => setCurrentView(AppView.ANALYSIS)}
-          className={`p-3 rounded-xl transition-all group relative ${
-            currentView === AppView.ANALYSIS 
-              ? 'bg-white/10 text-brand-400' 
-              : 'text-slate-400 hover:text-white hover:bg-white/5'
-          }`}
-          title="Analysis Dashboard"
-        >
-          <LayoutDashboard className="w-6 h-6" />
-          {currentView === AppView.ANALYSIS && (
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-brand-500 rounded-r-full -ml-3"></div>
-          )}
-        </button>
+        {/* Navigation Buttons */}
+        {activeSession ? (
+          <>
+            <button
+              onClick={() => setCurrentView(AppView.ANALYSIS)}
+              className={`p-3 rounded-xl transition-all group relative ${
+                currentView === AppView.ANALYSIS 
+                  ? 'bg-white/10 text-brand-400' 
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+              title="Analysis Dashboard"
+            >
+              <LayoutDashboard className="w-6 h-6" />
+              {currentView === AppView.ANALYSIS && (
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-brand-500 rounded-r-full -ml-3"></div>
+              )}
+            </button>
+            <button
+              onClick={() => setCurrentView(AppView.CHAT)}
+              className={`p-3 rounded-xl transition-all group relative ${
+                currentView === AppView.CHAT 
+                  ? 'bg-white/10 text-brand-400' 
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+              title="AI Chat"
+            >
+              <MessageSquareText className="w-6 h-6" />
+              {currentView === AppView.CHAT && (
+                 <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-brand-500 rounded-r-full -ml-3"></div>
+              )}
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => setCurrentView(AppView.DASHBOARD)}
+            className={`p-3 rounded-xl transition-all group relative ${
+              currentView === AppView.DASHBOARD 
+                ? 'bg-white/10 text-brand-400' 
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+            title="Dashboard"
+          >
+            <LayoutDashboard className="w-6 h-6" />
+            {currentView === AppView.DASHBOARD && (
+               <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-brand-500 rounded-r-full -ml-3"></div>
+            )}
+          </button>
+        )}
 
         <button
-          onClick={() => setCurrentView(AppView.CHAT)}
+          onClick={() => { setActiveSessionId(null); setCurrentView(AppView.MATRIX); }}
           className={`p-3 rounded-xl transition-all group relative ${
-            currentView === AppView.CHAT 
+            currentView === AppView.MATRIX 
               ? 'bg-white/10 text-brand-400' 
               : 'text-slate-400 hover:text-white hover:bg-white/5'
           }`}
-          title="AI Chat"
+          title="Comparison Matrix"
         >
-          <MessageSquareText className="w-6 h-6" />
-          {currentView === AppView.CHAT && (
+          <LayoutGrid className="w-6 h-6" />
+          {currentView === AppView.MATRIX && (
              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-brand-500 rounded-r-full -ml-3"></div>
           )}
         </button>
@@ -262,12 +366,12 @@ function App() {
       <div className="flex flex-1 overflow-hidden relative">
         
         {/* Workspace */}
-        <div className={`flex-1 flex flex-col transition-all duration-300 ${showDocPreview && currentView !== AppView.TERMS ? 'w-1/2' : 'w-full'}`}>
+        <div className={`flex-1 flex flex-col transition-all duration-300 ${activeSession && showDocPreview && !isWideView ? 'w-1/2' : 'w-full'}`}>
            {renderContent()}
         </div>
 
-        {/* Resizer / Toggle (Only show if not in Terms view) */}
-        {currentView !== AppView.TERMS && (
+        {/* Resizer / Toggle (Only show if active session and not in wide view) */}
+        {activeSession && !isWideView && (
           <button 
              onClick={() => setShowDocPreview(!showDocPreview)}
              className="absolute right-0 top-1/2 -translate-y-1/2 z-30 bg-white border border-slate-200 shadow-md p-1 rounded-l-md hover:bg-slate-50 text-slate-500"
@@ -277,10 +381,10 @@ function App() {
           </button>
         )}
 
-        {/* Document Preview Panel (Only show if not in Terms view) */}
-        {showDocPreview && currentView !== AppView.TERMS && (
+        {/* Document Preview Panel (Only show if active session and not in wide view) */}
+        {activeSession && showDocPreview && !isWideView && (
           <div className="w-1/2 bg-slate-200 border-l border-slate-300 h-full relative shadow-inner">
-            {isPreviewable ? (
+            {(activeSession.file.type === 'application/pdf' || activeSession.file.type === 'text/plain' || activeSession.file.type === 'text/html') ? (
               <iframe 
                 src={`data:${activeSession.file.type};base64,${activeSession.file.data}`} 
                 className="w-full h-full bg-white" 
@@ -289,19 +393,10 @@ function App() {
             ) : (
                <div className="flex flex-col items-center justify-center h-full text-slate-500 p-8 text-center">
                  <FileText className="w-16 h-16 mb-4 text-slate-400" />
-                 <h3 className="text-xl font-semibold text-slate-700">Word Document Preview</h3>
+                 <h3 className="text-xl font-semibold text-slate-700">Document Preview Unavailable</h3>
                  <p className="max-w-xs mt-2 text-sm">
-                   Browser preview is limited for Word files. The AI can still read and analyze the content fully.
+                   Browser preview is limited for this file type. The AI can still read and analyze the content fully.
                  </p>
-                 <div className="mt-6 p-4 bg-white rounded-lg shadow-sm border border-slate-200 flex items-center gap-3">
-                   <div className="p-2 bg-blue-50 text-blue-600 rounded">
-                     <AlertCircle className="w-5 h-5" />
-                   </div>
-                   <div className="text-left">
-                     <p className="font-medium text-slate-900 text-sm">Analysis Active</p>
-                     <p className="text-xs text-slate-500">Gemini is processing {activeSession.file.name}</p>
-                   </div>
-                 </div>
                </div>
             )}
           </div>
