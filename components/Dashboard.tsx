@@ -208,7 +208,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                            <Calendar className="w-3.5 h-3.5" />
                            {new Date(session.lastModified).toLocaleDateString()} 
                            <span className="text-slate-300">|</span>
-                           {session.extractionResults.length > 0 ? <span className="text-green-600 font-medium">Analyzed</span> : <span className="text-amber-600 font-medium">Pending Analysis</span>}
+                           {/* Check if map is not empty */}
+                           {Object.keys(session.benchmarkResults || {}).length > 0 || session.extractionResults.length > 0 ? (
+                             <span className="text-green-600 font-medium">Analyzed</span>
+                           ) : (
+                             <span className="text-amber-600 font-medium">Pending Analysis</span>
+                           )}
                         </div>
                       </div>
                       <div className="bg-slate-50 px-5 py-3 border-t border-slate-100 flex justify-between items-center group-hover:bg-brand-50/50 transition-colors">

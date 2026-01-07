@@ -88,6 +88,14 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
     }
   };
 
+  const toggleAllSessions = () => {
+    if (selectedSessionIds.length === sessions.length) {
+      setSelectedSessionIds([]);
+    } else {
+      setSelectedSessionIds(sessions.map(s => s.id));
+    }
+  };
+
   const handleBenchmarkChange = (term: string, value: string) => {
     onUpdateBenchmarkData({
       ...benchmarks,
@@ -108,7 +116,7 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
     }
   };
 
-  const getVarianceColor = (variance?: 'Green' | 'Yellow' | 'Red') => {
+  const getVarianceColor = (variance?: 'Green' | 'Yellow' | 'Red' | 'N/A') => {
     switch(variance) {
       case 'Green': return 'bg-green-50 text-green-700 border-green-200';
       case 'Yellow': return 'bg-yellow-50 text-yellow-700 border-yellow-200';
@@ -117,7 +125,7 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
     }
   };
 
-  const getVarianceIcon = (variance?: 'Green' | 'Yellow' | 'Red') => {
+  const getVarianceIcon = (variance?: 'Green' | 'Yellow' | 'Red' | 'N/A') => {
     switch(variance) {
       case 'Green': return <CheckCircle className="w-3 h-3 text-green-600" />;
       case 'Yellow': return <AlertTriangle className="w-3 h-3 text-yellow-600" />;
@@ -194,19 +202,31 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
              
              {/* Dropdown */}
              <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 hidden group-hover:block z-50 p-2 max-h-96 overflow-y-auto">
-               <div className="text-xs font-bold text-slate-400 uppercase px-2 py-1 mb-1">Available Sessions</div>
-               {sessions.map(s => (
-                 <label key={s.id} className="flex items-center gap-2 px-2 py-2 hover:bg-slate-50 rounded cursor-pointer">
-                   <input 
-                     type="checkbox" 
-                     checked={selectedSessionIds.includes(s.id)}
-                     onChange={() => toggleSession(s.id)}
-                     className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                   />
-                   <span className="text-sm text-slate-700 truncate">{s.borrowerName}</span>
-                 </label>
-               ))}
-               {sessions.length === 0 && <div className="p-2 text-sm text-slate-400 italic">No deals available</div>}
+               <div className="flex justify-between items-center px-2 py-2 mb-1 border-b border-slate-100">
+                 <span className="text-xs font-bold text-slate-400 uppercase">Available Sessions</span>
+                 <button 
+                   onClick={toggleAllSessions}
+                   className="text-[10px] font-semibold text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100 px-2 py-0.5 rounded transition-colors"
+                 >
+                   {selectedSessionIds.length === sessions.length && sessions.length > 0 ? 'Deselect All' : 'Select All'}
+                 </button>
+               </div>
+               
+               {sessions.length > 0 ? (
+                 sessions.map(s => (
+                   <label key={s.id} className="flex items-center gap-2 px-2 py-2 hover:bg-slate-50 rounded cursor-pointer">
+                     <input 
+                       type="checkbox" 
+                       checked={selectedSessionIds.includes(s.id)}
+                       onChange={() => toggleSession(s.id)}
+                       className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                     />
+                     <span className="text-sm text-slate-700 truncate">{s.borrowerName}</span>
+                   </label>
+                 ))
+               ) : (
+                 <div className="p-2 text-sm text-slate-400 italic">No deals available</div>
+               )}
              </div>
           </div>
         </div>
@@ -296,7 +316,10 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
                           {/* Deal Cells */}
                           {selectedSessions.map(session => {
                             const result = session.extractionResults.find(r => r.term === term.name);
-                            const benchmarkRes = session.benchmarkResults.find(b => b.term === term.name);
+                            // Look up benchmark result for current active profile
+                            const profileResults = session.benchmarkResults[activeProfileId] || [];
+                            const benchmarkRes = profileResults.find(b => b.term === term.name);
+                            
                             const value = result ? result.value : '-';
                             const variance = benchmarkRes?.variance;
                             

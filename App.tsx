@@ -8,7 +8,7 @@ import { BenchmarkManager } from './components/BenchmarkManager';
 import { Dashboard } from './components/Dashboard';
 import { MatrixView } from './components/MatrixView';
 import { DEFAULT_TERMS, DEFAULT_BENCHMARK_PROFILES, MAX_FILE_SIZE_MB } from './constants';
-import { AppView, UploadedFile, StandardTerm, DealSession, BenchmarkData, BenchmarkProfile, AIProvider } from './types';
+import { AppView, UploadedFile, StandardTerm, DealSession, BenchmarkData, BenchmarkProfile, AIProvider, ChatMessage } from './types';
 import { getAllSessions, saveSession, deleteSessionById } from './services/db';
 import { getSettings, saveSettings } from './services/settings';
 import { extractAndBenchmark, rebenchmarkTerms } from './services/aiService';
@@ -28,10 +28,48 @@ function App() {
   
   // UI State
   const [showDocPreview, setShowDocPreview] = useState(true);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   // Derived State
   const activeSession = sessions.find(s => s.id === activeSessionId) || null;
   const activeBenchmarkData = benchmarkProfiles.find(p => p.id === activeProfileId)?.data || DEFAULT_BENCHMARK_PROFILES[0].data;
+
+  // Handle Blob URL generation for document preview
+  useEffect(() => {
+    if (!activeSession?.file) {
+      setPreviewUrl(null);
+      return;
+    }
+
+    const { data, type } = activeSession.file;
+    
+    // Only support preview for PDF, Text, HTML
+    // We convert Base64 to Blob URL to handle large files better than Data URIs
+    if (type === 'application/pdf' || type === 'text/plain' || type === 'text/html') {
+      let objectUrl: string | null = null;
+      try {
+        const byteCharacters = atob(data);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type });
+        objectUrl = URL.createObjectURL(blob);
+        setPreviewUrl(objectUrl);
+      } catch (e) {
+        console.error("Failed to generate preview blob:", e);
+        setPreviewUrl(null);
+      }
+
+      // Cleanup function to revoke URL when activeSession file changes or unmounts
+      return () => {
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+      };
+    } else {
+      setPreviewUrl(null);
+    }
+  }, [activeSession?.file]);
 
   const refreshSessions = useCallback(async () => {
     setIsLoadingDB(true);
@@ -67,7 +105,7 @@ function App() {
       borrowerName: 'New Borrower',
       file: uploadedFile,
       extractionResults: [],
-      benchmarkResults: [],
+      benchmarkResults: {}, // Initial empty map
       chatHistory: [],
       lastModified: new Date()
     };
@@ -108,14 +146,17 @@ function App() {
             borrowerName: 'Analyzing...',
             file: uploadedFile,
             extractionResults: [],
-            benchmarkResults: [],
+            benchmarkResults: {},
             chatHistory: [],
             lastModified: new Date()
           };
 
           const { extraction, benchmarking } = await extractAndBenchmark(uploadedFile.data, uploadedFile.type, terms, activeBenchmarkData, aiProvider);
           newSession.extractionResults = extraction;
-          newSession.benchmarkResults = benchmarking;
+          // Store initial benchmark results under the active profile ID
+          newSession.benchmarkResults = {
+             [activeProfileId]: benchmarking
+          };
 
           const borrowerTerm = extraction.find(r => r.term === 'Borrower Name');
           if (borrowerTerm && borrowerTerm.value && borrowerTerm.value !== 'Not Found') {
@@ -135,7 +176,7 @@ function App() {
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
-  }, [terms, activeBenchmarkData, aiProvider]);
+  }, [terms, activeBenchmarkData, activeProfileId, aiProvider]);
 
   const handleRebenchmarkSessions = async (sessionIds: string[]) => {
      const targetBenchmarks = activeBenchmarkData;
@@ -148,7 +189,13 @@ function App() {
         const session = updatedSessions[sessionIndex];
         const newResults = await rebenchmarkTerms(session.extractionResults, targetBenchmarks, aiProvider);
         
-        const updatedSession = { ...session, benchmarkResults: newResults, lastModified: new Date() };
+        // Update the specific profile key in the benchmark map
+        const updatedBenchmarks = {
+            ...session.benchmarkResults,
+            [activeProfileId]: newResults
+        };
+
+        const updatedSession = { ...session, benchmarkResults: updatedBenchmarks, lastModified: new Date() };
         updatedSessions[sessionIndex] = updatedSession;
         await saveSession(updatedSession);
      }));
@@ -172,20 +219,28 @@ function App() {
     }
   };
 
-  const handleUpdateActiveSession = async (updates: Partial<DealSession>) => {
-    if (!activeSessionId) return;
+  /**
+   * Updates a session safely by ID, ensuring we use the latest state.
+   */
+  const handleUpdateSession = (sessionId: string, updateFn: (s: DealSession) => Partial<DealSession>) => {
+    setSessions(prev => prev.map(s => {
+      if (s.id === sessionId) {
+        const updates = updateFn(s);
+        const newSession = { ...s, ...updates, lastModified: new Date() };
+        saveSession(newSession).catch(err => console.error("Failed to autosave:", err));
+        return newSession;
+      }
+      return s;
+    }));
+  };
 
-    setSessions(prev => {
-      const updatedSessions = prev.map(s => {
-        if (s.id === activeSessionId) {
-          const updatedSession = { ...s, ...updates, lastModified: new Date() };
-          saveSession(updatedSession).catch(err => console.error("Failed to autosave:", err));
-          return updatedSession;
-        }
-        return s;
-      });
-      return updatedSessions;
-    });
+  /**
+   * Helper for updating the *active* session specifically.
+   */
+  const handleUpdateActiveSession = (updates: Partial<DealSession>) => {
+    if (activeSessionId) {
+      handleUpdateSession(activeSessionId, () => updates);
+    }
   };
 
   const handleUpdateBenchmarks = (data: BenchmarkData) => {
@@ -256,8 +311,15 @@ function App() {
             setResults={(results) => handleUpdateActiveSession({ extractionResults: typeof results === 'function' ? results(activeSession.extractionResults) : results })}
             borrowerName={activeSession.borrowerName}
             onUpdateBorrowerName={(name) => handleUpdateActiveSession({ borrowerName: name })}
-            benchmarkResults={activeSession.benchmarkResults}
-            setBenchmarkResults={(results) => handleUpdateActiveSession({ benchmarkResults: typeof results === 'function' ? results(activeSession.benchmarkResults) : results })}
+            
+            benchmarkResultsMap={activeSession.benchmarkResults}
+            setBenchmarkResultsMap={(resultsMap) => handleUpdateActiveSession({ 
+              benchmarkResults: typeof resultsMap === 'function' ? resultsMap(activeSession.benchmarkResults) : resultsMap 
+            })}
+            
+            benchmarkProfiles={benchmarkProfiles}
+            activeProfileId={activeProfileId}
+            
             webFinancials={activeSession.webFinancials}
             setWebFinancials={(data) => handleUpdateActiveSession({ webFinancials: data })}
             aiProvider={aiProvider}
@@ -265,13 +327,16 @@ function App() {
         );
         
       case AppView.CHAT:
-        if (!activeSession) return null;
         return (
           <ChatView 
-            file={activeSession.file}
-            history={activeSession.chatHistory}
-            setHistory={(history) => handleUpdateActiveSession({ chatHistory: typeof history === 'function' ? history(activeSession.chatHistory) : history })}
-            borrowerName={activeSession.borrowerName}
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            onSelectSession={setActiveSessionId}
+            onUpdateHistory={(sessionId, historyFn) => {
+              handleUpdateSession(sessionId, (s) => ({
+                chatHistory: typeof historyFn === 'function' ? historyFn(s.chatHistory) : historyFn
+              }));
+            }}
             aiProvider={aiProvider}
           />
         );
@@ -279,7 +344,7 @@ function App() {
     }
   };
 
-  const isWideView = [AppView.MATRIX, AppView.DASHBOARD, AppView.UPLOAD, AppView.TERMS, AppView.BENCHMARKS].includes(currentView);
+  const isWideView = [AppView.MATRIX, AppView.DASHBOARD, AppView.UPLOAD, AppView.TERMS, AppView.BENCHMARKS, AppView.CHAT].includes(currentView);
   
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100">
@@ -294,7 +359,10 @@ function App() {
             <button onClick={() => setCurrentView(AppView.CHAT)} className={`p-3 rounded-xl transition-all group relative ${currentView === AppView.CHAT ? 'bg-white/10 text-brand-400' : 'text-slate-400 hover:text-white hover:bg-white/5'}`} title="AI Chat"><MessageSquareText className="w-6 h-6" /></button>
           </>
         ) : (
-          <button onClick={() => setCurrentView(AppView.DASHBOARD)} className={`p-3 rounded-xl transition-all group relative ${currentView === AppView.DASHBOARD ? 'bg-white/10 text-brand-400' : 'text-slate-400 hover:text-white hover:bg-white/5'}`} title="Dashboard"><LayoutDashboard className="w-6 h-6" /></button>
+          <>
+            <button onClick={() => setCurrentView(AppView.DASHBOARD)} className={`p-3 rounded-xl transition-all group relative ${currentView === AppView.DASHBOARD ? 'bg-white/10 text-brand-400' : 'text-slate-400 hover:text-white hover:bg-white/5'}`} title="Dashboard"><LayoutDashboard className="w-6 h-6" /></button>
+            <button onClick={() => setCurrentView(AppView.CHAT)} className={`p-3 rounded-xl transition-all group relative ${currentView === AppView.CHAT ? 'bg-white/10 text-brand-400' : 'text-slate-400 hover:text-white hover:bg-white/5'}`} title="AI Chat"><MessageSquareText className="w-6 h-6" /></button>
+          </>
         )}
 
         <button onClick={() => { setActiveSessionId(null); setCurrentView(AppView.MATRIX); }} className={`p-3 rounded-xl transition-all group relative ${currentView === AppView.MATRIX ? 'bg-white/10 text-brand-400' : 'text-slate-400 hover:text-white hover:bg-white/5'}`} title="Comparison Matrix"><LayoutGrid className="w-6 h-6" /></button>
@@ -306,19 +374,20 @@ function App() {
         <div className={`flex-1 flex flex-col transition-all duration-300 ${activeSession && showDocPreview && !isWideView ? 'w-1/2' : 'w-full'}`}>
            {renderContent()}
         </div>
-        {activeSession && !isWideView && (
+        {activeSession && showDocPreview && !isWideView && (
           <button onClick={() => setShowDocPreview(!showDocPreview)} className="absolute right-0 top-1/2 -translate-y-1/2 z-30 bg-white border border-slate-200 shadow-md p-1 rounded-l-md hover:bg-slate-50 text-slate-500" style={{ right: showDocPreview ? '50%' : '0' }}>
             {showDocPreview ? <ChevronRight className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
           </button>
         )}
         {activeSession && showDocPreview && !isWideView && (
           <div className="w-1/2 bg-slate-200 border-l border-slate-300 h-full relative shadow-inner">
-            {(activeSession.file.type === 'application/pdf' || activeSession.file.type === 'text/plain' || activeSession.file.type === 'text/html') ? (
-              <iframe src={`data:${activeSession.file.type};base64,${activeSession.file.data}`} className="w-full h-full bg-white" title="Document Preview" />
+            {previewUrl ? (
+              <iframe src={previewUrl} className="w-full h-full bg-white" title="Document Preview" />
             ) : (
                <div className="flex flex-col items-center justify-center h-full text-slate-500 p-8 text-center">
                  <FileText className="w-16 h-16 mb-4 text-slate-400" />
                  <h3 className="text-xl font-semibold text-slate-700">Document Preview Unavailable</h3>
+                 {activeSession.file.type === 'application/pdf' && <p className="text-xs text-red-400 mt-2">PDF Display Error: Invalid format or browser block.</p>}
                </div>
             )}
           </div>

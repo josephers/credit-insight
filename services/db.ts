@@ -1,4 +1,5 @@
 import { DealSession } from '../types';
+import { DEFAULT_BENCHMARK_PROFILES } from '../constants';
 
 const DB_NAME = 'CreditInsightDB';
 const STORE_NAME = 'sessions';
@@ -65,6 +66,31 @@ const syncFromServer = async (): Promise<void> => {
 };
 
 /**
+ * Helper to migrate legacy session data structure to new schema
+ */
+const migrateSessionData = (session: any): DealSession => {
+  const defaultProfileId = DEFAULT_BENCHMARK_PROFILES[0].id;
+  
+  // Migrate benchmarkResults from Array to Record if needed
+  let migratedBenchmarks = session.benchmarkResults;
+  if (Array.isArray(session.benchmarkResults)) {
+    migratedBenchmarks = { [defaultProfileId]: session.benchmarkResults };
+  } else if (!session.benchmarkResults) {
+    migratedBenchmarks = {};
+  }
+
+  return {
+    ...session,
+    lastModified: new Date(session.lastModified),
+    chatHistory: (session.chatHistory || []).map((msg: any) => ({
+      ...msg,
+      timestamp: new Date(msg.timestamp)
+    })),
+    benchmarkResults: migratedBenchmarks
+  };
+};
+
+/**
  * Get all deal sessions from the database.
  * Now attempts to fetch from server first to ensure freshness.
  */
@@ -79,15 +105,7 @@ export const getAllSessions = async (): Promise<DealSession[]> => {
     const request = store.getAll();
 
     request.onsuccess = () => {
-      // IndexedDB stores Dates as objects, but sometimes they need re-instantiation
-      const sessions = request.result.map(session => ({
-        ...session,
-        lastModified: new Date(session.lastModified),
-        chatHistory: session.chatHistory.map((msg: any) => ({
-          ...msg,
-          timestamp: new Date(msg.timestamp)
-        }))
-      }));
+      const sessions = request.result.map(migrateSessionData);
       // Sort by last modified descending
       sessions.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
       resolve(sessions);
@@ -144,7 +162,8 @@ export const exportDatabase = async (): Promise<string> => {
     const request = store.getAll();
 
     request.onsuccess = () => {
-       resolve(JSON.stringify(request.result, null, 2));
+       const sessions = request.result.map(migrateSessionData);
+       resolve(JSON.stringify(sessions, null, 2));
     };
     request.onerror = () => reject(request.error);
   });
@@ -157,8 +176,8 @@ export const exportDatabase = async (): Promise<string> => {
  */
 export const importDatabase = async (jsonString: string, shouldSyncToServer = true): Promise<void> => {
   try {
-    const sessions = JSON.parse(jsonString);
-    if (!Array.isArray(sessions)) throw new Error("Invalid backup file format");
+    const rawSessions = JSON.parse(jsonString);
+    if (!Array.isArray(rawSessions)) throw new Error("Invalid backup file format");
 
     const db = await openDB();
     
@@ -169,17 +188,8 @@ export const importDatabase = async (jsonString: string, shouldSyncToServer = tr
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
 
-      sessions.forEach((s: any) => {
-        // Rehydrate Dates from JSON strings
-        const session = { ...s };
-        session.lastModified = new Date(session.lastModified);
-        
-        if (session.chatHistory) {
-            session.chatHistory = session.chatHistory.map((c: any) => ({
-                ...c,
-                timestamp: new Date(c.timestamp)
-            }));
-        }
+      rawSessions.forEach((s: any) => {
+        const session = migrateSessionData(s);
         
         if (session.webFinancials) {
             session.webFinancials.lastUpdated = new Date(session.webFinancials.lastUpdated);

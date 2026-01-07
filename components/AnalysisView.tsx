@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Play, Download, ChevronDown, ChevronUp, Quote, AlertCircle, FileText, Scale, LayoutList, AlertTriangle, Globe, ExternalLink, RefreshCw } from 'lucide-react';
-import { StandardTerm, ExtractionResult, UploadedFile, BenchmarkResult, WebFinancialData, AIProvider } from '../types';
-import { extractAndBenchmark, fetchFinancialsFromWeb } from '../services/aiService';
+import React, { useState, useEffect } from 'react';
+import { Play, Download, ChevronDown, ChevronUp, Quote, AlertCircle, FileText, Scale, LayoutList, AlertTriangle, Globe, ExternalLink, RefreshCw, BarChart3 } from 'lucide-react';
+import { StandardTerm, ExtractionResult, UploadedFile, BenchmarkResult, WebFinancialData, AIProvider, BenchmarkProfile } from '../types';
+import { extractAndBenchmark, fetchFinancialsFromWeb, rebenchmarkTerms } from '../services/aiService';
 
 interface AnalysisViewProps {
   file: UploadedFile;
@@ -11,8 +11,13 @@ interface AnalysisViewProps {
   setResults: React.Dispatch<React.SetStateAction<ExtractionResult[]>>;
   borrowerName: string;
   onUpdateBorrowerName: (name: string) => void;
-  benchmarkResults: BenchmarkResult[];
-  setBenchmarkResults: React.Dispatch<React.SetStateAction<BenchmarkResult[]>>;
+  // This is now a Record map
+  benchmarkResultsMap: Record<string, BenchmarkResult[]>;
+  setBenchmarkResultsMap: React.Dispatch<React.SetStateAction<Record<string, BenchmarkResult[]>>>;
+  
+  benchmarkProfiles: BenchmarkProfile[];
+  activeProfileId: string;
+  
   webFinancials?: { data: WebFinancialData[], sourceUrls: string[], lastUpdated: Date };
   setWebFinancials: (data: { data: WebFinancialData[], sourceUrls: string[], lastUpdated: Date }) => void;
   aiProvider: AIProvider;
@@ -28,8 +33,10 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   setResults,
   borrowerName,
   onUpdateBorrowerName,
-  benchmarkResults,
-  setBenchmarkResults,
+  benchmarkResultsMap,
+  setBenchmarkResultsMap,
+  benchmarkProfiles,
+  activeProfileId,
   webFinancials,
   setWebFinancials,
   aiProvider
@@ -39,23 +46,45 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   const [statusText, setStatusText] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('terms');
   const [expandedResult, setExpandedResult] = useState<string | null>(null);
+  
+  // Benchmarking View State
+  const [viewProfileId, setViewProfileId] = useState(activeProfileId);
+  const [isRebenchmarking, setIsRebenchmarking] = useState(false);
+
+  // Sync view profile if props change significantly (e.g. init)
+  useEffect(() => {
+    if (activeProfileId && !viewProfileId) {
+      setViewProfileId(activeProfileId);
+    }
+  }, [activeProfileId]);
+
+  // Derive current benchmark results based on selected profile
+  const currentBenchmarkResults = benchmarkResultsMap[viewProfileId] || [];
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
-    // Note: We do NOT clear results here. We want to keep previous results visible
-    // in case the new request fails (e.g. network error).
-    
     try {
       setStatusText(`Analyzing document using ${aiProvider === 'azure' ? 'Azure OpenAI' : 'Gemini'}...`);
       
-      // Perform simultaneous extraction and benchmarking
-      const { extraction, benchmarking } = await extractAndBenchmark(file.data, file.type, terms, undefined, aiProvider);
+      const currentProfile = benchmarkProfiles.find(p => p.id === viewProfileId) || benchmarkProfiles[0];
       
-      // Only update state after successful response
+      // Perform simultaneous extraction and benchmarking for the SELECTED profile
+      const { extraction, benchmarking } = await extractAndBenchmark(
+        file.data, 
+        file.type, 
+        terms, 
+        currentProfile.data, // Use selected profile data
+        aiProvider
+      );
+      
       setResults(extraction);
-      setBenchmarkResults(benchmarking);
+      
+      // Save benchmark results specifically for this profile
+      setBenchmarkResultsMap(prev => ({
+        ...prev,
+        [viewProfileId]: benchmarking
+      }));
 
-      // Auto-update Borrower Name if found
       const borrowerTerm = extraction.find(r => r.term === 'Borrower Name');
       if (borrowerTerm && borrowerTerm.value && borrowerTerm.value !== 'Not Found') {
         onUpdateBorrowerName(borrowerTerm.value);
@@ -64,10 +93,34 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     } catch (e) {
       console.error(e);
       alert(`Analysis failed using ${aiProvider}. Please check your keys or try Gemini.`);
-      // Previous results remain in state
     } finally {
       setIsAnalyzing(false);
       setStatusText('');
+    }
+  };
+
+  const handleRunBenchmarkOnly = async () => {
+    if (results.length === 0) {
+      alert("Please run extraction first.");
+      return;
+    }
+    
+    setIsRebenchmarking(true);
+    try {
+      const targetProfile = benchmarkProfiles.find(p => p.id === viewProfileId);
+      if (!targetProfile) return;
+
+      const newResults = await rebenchmarkTerms(results, targetProfile.data, aiProvider);
+      
+      setBenchmarkResultsMap(prev => ({
+        ...prev,
+        [viewProfileId]: newResults
+      }));
+    } catch (e) {
+      console.error(e);
+      alert("Benchmark analysis failed.");
+    } finally {
+      setIsRebenchmarking(false);
     }
   };
 
@@ -100,11 +153,10 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   const handleExport = () => {
     if (results.length === 0) return;
     
-    // Create CSV content
     const headers = ['Category', 'Term', 'Value', 'Source Section', 'Confidence', 'Evidence', 'Benchmark Variance', 'Commentary'];
     const rows = results.map(r => {
       const termDef = terms.find(t => t.name === r.term);
-      const bench = benchmarkResults.find(b => b.term === r.term);
+      const bench = currentBenchmarkResults.find(b => b.term === r.term);
       
       return [
         termDef?.category || 'General',
@@ -145,7 +197,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2">
                 <h4 className="font-bold text-slate-800 text-[15px]">{term.name}</h4>
-                {/* Collapsed view source hint */}
                 {!isExpanded && result.sourceSection && result.sourceSection !== 'N/A' && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200 opacity-60 group-hover/card:opacity-100 transition-opacity">
                     <FileText className="w-3 h-3" />
@@ -159,7 +210,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
             </div>
             
             <div className="flex flex-col items-end gap-3 flex-shrink-0">
-               {/* Confidence Badge */}
               <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-md border border-slate-100">
                  <div className={`w-1.5 h-1.5 rounded-full ${
                     result.confidence === 'High' ? 'bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.4)]' :
@@ -172,7 +222,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                    {result.confidence}
                  </span>
               </div>
-              
               {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
             </div>
           </div>
@@ -181,8 +230,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
         {isExpanded && (
           <div className="bg-slate-50 border-t border-slate-100 p-4 animate-in slide-in-from-top-1 duration-200">
             <div className="flex flex-col gap-3">
-               
-               {/* Section Link / Citation Header */}
                <div className="flex items-center gap-2 mb-1">
                  <FileText className="w-4 h-4 text-brand-600" />
                  <span className="font-semibold text-xs text-slate-600 uppercase tracking-wider">Source Reference:</span>
@@ -190,8 +237,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                    {result.sourceSection}
                  </span>
                </div>
-
-               {/* Evidence Quote Block */}
                <div className="relative pl-4 mt-1">
                  <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-brand-300 rounded-full"></div>
                  <Quote className="absolute -left-2 top-0 w-4 h-4 text-brand-600 bg-slate-50 fill-white" />
@@ -247,7 +292,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                 General Terms
               </h3>
               {terms.filter(t => t.category === 'General').map(renderResultCard)}
-              
               <h3 className="font-bold text-slate-800 flex items-center gap-2 border-b pb-2 mt-8">
                 <AlertCircle className="w-5 h-5 text-red-500" />
                 Risk & Defaults
@@ -260,7 +304,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                 Key Definitions
               </h3>
               {terms.filter(t => t.category === 'Definitions').map(renderResultCard)}
-              
               <h3 className="font-bold text-slate-800 flex items-center gap-2 border-b pb-2 mt-8">
                 <Scale className="w-5 h-5 text-green-500" />
                 Financial Covenants
@@ -304,63 +347,105 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
         );
 
       case 'benchmark':
-        if (benchmarkResults.length === 0) {
-           return (
-             <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-               <p>No benchmark data available. Try re-running the analysis.</p>
-             </div>
-           )
-        }
+        // Determine selected profile object for display name
+        const selectedProfile = benchmarkProfiles.find(p => p.id === viewProfileId) || benchmarkProfiles[0];
+
         return (
           <div className="max-w-6xl mx-auto">
              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold text-slate-800">Portfolio Benchmark Matrix</h3>
-                <span className="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
-                  Comparisons vs. Market Standard (Conservative)
-                </span>
-             </div>
-             
-             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="grid grid-cols-12 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  <div className="col-span-3 p-4">Term</div>
-                  <div className="col-span-3 p-4">Current Deal</div>
-                  <div className="col-span-3 p-4">Benchmark / Market</div>
-                  <div className="col-span-3 p-4">Variance Analysis</div>
-                </div>
-                
-                {benchmarkResults.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-12 border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors">
-                    <div className="col-span-3 p-4 font-medium text-slate-800 text-sm flex items-center">
-                      {item.term}
-                    </div>
-                    <div className="col-span-3 p-4 text-sm text-slate-600 font-mono bg-slate-50/50">
-                      {item.extractedValue}
-                    </div>
-                    <div className="col-span-3 p-4 text-sm text-slate-500 font-mono">
-                      {item.benchmarkValue}
-                    </div>
-                    <div className="col-span-3 p-4">
-                       <div className="flex items-start gap-2">
-                         <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${
-                           item.variance === 'Green' ? 'bg-green-500' : 
-                           item.variance === 'Yellow' ? 'bg-yellow-500' : 'bg-red-500'
-                         }`} />
-                         <div>
-                           <span className={`text-xs font-bold px-1.5 py-0.5 rounded border mb-1 inline-block ${
-                              item.variance === 'Green' ? 'bg-green-50 text-green-700 border-green-200' : 
-                              item.variance === 'Yellow' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-red-50 text-red-700 border-red-200'
-                           }`}>
-                             {item.variance}
-                           </span>
-                           <p className="text-xs text-slate-600 leading-tight">
-                             {item.commentary}
-                           </p>
-                         </div>
-                       </div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-800">Portfolio Benchmark Matrix</h3>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-sm text-slate-500">Comparing against:</span>
+                    <div className="relative">
+                      <select 
+                        value={viewProfileId}
+                        onChange={(e) => setViewProfileId(e.target.value)}
+                        className="appearance-none bg-white border border-slate-300 hover:border-brand-400 rounded-md py-1 pl-3 pr-8 text-sm font-semibold text-brand-700 outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer shadow-sm transition-all"
+                      >
+                        {benchmarkProfiles.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-brand-600 pointer-events-none" />
                     </div>
                   </div>
-                ))}
+                </div>
+                
+                {/* Re-run button */}
+                <button
+                  onClick={handleRunBenchmarkOnly}
+                  disabled={isRebenchmarking}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-700 text-sm font-medium hover:bg-slate-50 hover:text-brand-600 transition-colors shadow-sm disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isRebenchmarking ? 'animate-spin' : ''}`} />
+                  {isRebenchmarking ? 'Running Analysis...' : 'Re-run Comparison'}
+                </button>
              </div>
+             
+             {/* If we have no results for this specific profile, prompt to run */}
+             {currentBenchmarkResults.length === 0 ? (
+               <div className="flex flex-col items-center justify-center bg-white rounded-xl border border-slate-200 border-dashed p-12 text-center">
+                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+                   <BarChart3 className="w-8 h-8 text-slate-300" />
+                 </div>
+                 <h3 className="text-lg font-semibold text-slate-700 mb-2">No Analysis for {selectedProfile.name}</h3>
+                 <p className="text-slate-500 max-w-sm mb-6">
+                   You haven't run a variance analysis against this specific benchmark profile yet.
+                 </p>
+                 <button
+                   onClick={handleRunBenchmarkOnly}
+                   disabled={isRebenchmarking}
+                   className="px-6 py-2.5 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 shadow-sm transition-colors flex items-center gap-2"
+                 >
+                   <Play className="w-4 h-4" />
+                   Run Benchmark Analysis
+                 </button>
+               </div>
+             ) : (
+               /* Result Table */
+               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="grid grid-cols-12 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    <div className="col-span-3 p-4">Term</div>
+                    <div className="col-span-3 p-4">Current Deal</div>
+                    <div className="col-span-3 p-4">Benchmark ({selectedProfile.name})</div>
+                    <div className="col-span-3 p-4">Variance Analysis</div>
+                  </div>
+                  
+                  {currentBenchmarkResults.map((item, idx) => (
+                    <div key={idx} className="grid grid-cols-12 border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors">
+                      <div className="col-span-3 p-4 font-medium text-slate-800 text-sm flex items-center">
+                        {item.term}
+                      </div>
+                      <div className="col-span-3 p-4 text-sm text-slate-600 font-mono bg-slate-50/50">
+                        {item.extractedValue}
+                      </div>
+                      <div className="col-span-3 p-4 text-sm text-slate-500 font-mono">
+                        {item.benchmarkValue}
+                      </div>
+                      <div className="col-span-3 p-4">
+                         <div className="flex items-start gap-2">
+                           <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${
+                             item.variance === 'Green' ? 'bg-green-500' : 
+                             item.variance === 'Yellow' ? 'bg-yellow-500' : 'bg-red-500'
+                           }`} />
+                           <div>
+                             <span className={`text-xs font-bold px-1.5 py-0.5 rounded border mb-1 inline-block ${
+                                item.variance === 'Green' ? 'bg-green-50 text-green-700 border-green-200' : 
+                                item.variance === 'Yellow' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-red-50 text-red-700 border-red-200'
+                             }`}>
+                               {item.variance}
+                             </span>
+                             <p className="text-xs text-slate-600 leading-tight">
+                               {item.commentary}
+                             </p>
+                           </div>
+                         </div>
+                      </div>
+                    </div>
+                  ))}
+               </div>
+             )}
           </div>
         );
 
@@ -406,7 +491,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                </div>
             ) : (
               <div className="space-y-6">
-                {/* Metrics Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                    {webFinancials.data.map((item, idx) => (
                      <div key={idx} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-brand-200 transition-colors">
@@ -423,8 +507,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                      </div>
                    ))}
                 </div>
-
-                {/* Sources Footnote */}
                 {webFinancials.sourceUrls.length > 0 && (
                   <div className="bg-slate-100 rounded-lg p-4 border border-slate-200">
                     <h5 className="text-xs font-bold text-slate-600 uppercase mb-2 flex items-center gap-1">
@@ -445,7 +527,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                     </div>
                   </div>
                 )}
-                
                 <p className="text-right text-[10px] text-slate-400">
                   Last updated: {new Date(webFinancials.lastUpdated).toLocaleString()}
                 </p>
@@ -484,7 +565,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
               isAnalyzing ? 'bg-slate-400 cursor-not-allowed' : 'bg-brand-600 hover:bg-brand-700'
             }`}
           >
-            {isAnalyzing ? 'Processing...' : 'Re-Run Analysis'}
+            {isAnalyzing ? 'Processing...' : 'Re-Run Full Analysis'}
           </button>
         </div>
       </div>

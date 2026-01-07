@@ -18,7 +18,7 @@ export interface BenchmarkResult {
   term: string;
   extractedValue: string;
   benchmarkValue: string;
-  variance: 'Green' | 'Yellow' | 'Red'; // Green = In line/Better, Yellow = Minor Dev, Red = Aggressive/Worse
+  variance: 'Green' | 'Yellow' | 'Red' | 'N/A'; // Green = In line/Better, Yellow = Minor Dev, Red = Aggressive/Worse
   commentary: string;
 }
 
@@ -49,7 +49,7 @@ export interface DealSession {
   borrowerName: string;
   file: UploadedFile;
   extractionResults: ExtractionResult[];
-  benchmarkResults: BenchmarkResult[];
+  benchmarkResults: Record<string, BenchmarkResult[]>; // Key is BenchmarkProfile.id
   webFinancials?: {
     data: WebFinancialData[];
     sourceUrls: string[];
