@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { ExtractionResult, StandardTerm, ChatMessage, BenchmarkResult, WebFinancialData } from "../types";
+import { ExtractionResult, StandardTerm, ChatMessage, BenchmarkResult, WebFinancialData, BenchmarkData } from "../types";
 import { MARKET_BENCHMARK } from "../constants";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -22,11 +22,16 @@ const sanitizeMimeType = (mimeType: string): string => {
 export const extractAndBenchmark = async (
   fileBase64: string,
   mimeType: string,
-  terms: StandardTerm[]
+  terms: StandardTerm[],
+  customBenchmarks?: BenchmarkData
 ): Promise<{ extraction: ExtractionResult[], benchmarking: BenchmarkResult[] }> => {
   try {
     const termListString = terms.map(t => `${t.name} (${t.description || ''})`).join('\n');
-    const benchmarkContext = JSON.stringify(MARKET_BENCHMARK, null, 2);
+    
+    // Use custom benchmarks if provided, otherwise default to constant
+    const benchmarkData = customBenchmarks || MARKET_BENCHMARK;
+    const benchmarkContext = JSON.stringify(benchmarkData, null, 2);
+    
     const safeMimeType = sanitizeMimeType(mimeType);
 
     const prompt = `
@@ -120,7 +125,7 @@ export const extractAndBenchmark = async (
         benchmarking.push({
           term: r.term,
           extractedValue: r.value,
-          benchmarkValue: r.benchmarkValue || MARKET_BENCHMARK[r.term as keyof typeof MARKET_BENCHMARK] || 'N/A',
+          benchmarkValue: r.benchmarkValue || benchmarkData[r.term as keyof typeof benchmarkData] || 'N/A',
           variance: r.variance,
           commentary: r.commentary
         });
@@ -134,72 +139,6 @@ export const extractAndBenchmark = async (
     throw error;
   }
 };
-
-/**
- * Extracts specific terms from a document using Gemini.
- * @deprecated Use extractAndBenchmark for better performance.
- */
-export const extractTermsFromDocument = async (
-  fileBase64: string,
-  mimeType: string,
-  terms: StandardTerm[]
-): Promise<ExtractionResult[]> => {
-  const { extraction } = await extractAndBenchmark(fileBase64, mimeType, terms);
-  return extraction;
-};
-
-/**
- * Compares extracted terms against a market benchmark using Gemini.
- * @deprecated Use extractAndBenchmark for better performance.
- */
-export const compareWithBenchmark = async (
-  extractedResults: ExtractionResult[]
-): Promise<BenchmarkResult[]> => {
-  // Fallback if needed, but we prefer the combined call.
-  // We keep the old logic just in case partial re-runs are needed, 
-  // though for this app we'll switch to the combined one.
-  try {
-    const relevantExtractions = extractedResults.filter(r => Object.keys(MARKET_BENCHMARK).includes(r.term));
-    if (relevantExtractions.length === 0) return [];
-    
-    const benchmarkContext = JSON.stringify(MARKET_BENCHMARK, null, 2);
-    const extractionContext = JSON.stringify(relevantExtractions.map(r => ({ term: r.term, value: r.value })), null, 2);
-
-    const prompt = `
-      COMPARE Current Deal Terms against Market Benchmark.
-      BENCHMARK: ${benchmarkContext}
-      DEAL: ${extractionContext}
-      Return JSON array with variance (Green/Yellow/Red) and commentary.
-    `;
-
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: [{ parts: [{ text: prompt }] }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              term: { type: Type.STRING },
-              extractedValue: { type: Type.STRING },
-              benchmarkValue: { type: Type.STRING },
-              variance: { type: Type.STRING, enum: ['Green', 'Yellow', 'Red'] },
-              commentary: { type: Type.STRING }
-            },
-            required: ['term', 'extractedValue', 'benchmarkValue', 'variance', 'commentary']
-          }
-        }
-      }
-    });
-
-    return JSON.parse(response.text!) as BenchmarkResult[];
-  } catch (error) {
-    console.error("Benchmark error:", error);
-    return [];
-  }
-}
 
 /**
  * Fetches latest financial data for a borrower using Google Search Grounding.

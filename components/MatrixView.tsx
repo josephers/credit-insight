@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { Upload, X, CheckCircle, AlertTriangle, AlertCircle, LayoutGrid, FileText, Plus, GripVertical } from 'lucide-react';
-import { DealSession, StandardTerm } from '../types';
-import { MARKET_BENCHMARK } from '../constants';
+import { DealSession, StandardTerm, BenchmarkData } from '../types';
 
 interface MatrixViewProps {
   sessions: DealSession[];
   terms: StandardTerm[];
+  benchmarks: BenchmarkData;
   onAnalyzeFile: (file: File) => Promise<void>;
   onRemoveSession: (id: string) => void;
 }
@@ -13,6 +13,7 @@ interface MatrixViewProps {
 export const MatrixView: React.FC<MatrixViewProps> = ({ 
   sessions, 
   terms, 
+  benchmarks,
   onAnalyzeFile,
   onRemoveSession 
 }) => {
@@ -205,7 +206,7 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
                     {/* Term Rows */}
                     {catTerms.map(term => {
                       // Get benchmark value
-                      const benchmarkVal = MARKET_BENCHMARK[term.name as keyof typeof MARKET_BENCHMARK] || 'N/A';
+                      const benchmarkVal = benchmarks[term.name as keyof typeof benchmarks] || 'N/A';
                       
                       return (
                         <tr key={term.id} className="hover:bg-slate-50/50 transition-colors">

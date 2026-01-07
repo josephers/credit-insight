@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useRef } from 'react';
-import { Plus, Search, FileText, ChevronRight, Briefcase, Calendar, Trash2, Settings, Download, UploadCloud } from 'lucide-react';
+import { Plus, Search, FileText, ChevronRight, Briefcase, Calendar, Trash2, Settings, Download, UploadCloud, Scale } from 'lucide-react';
 import { DealSession } from '../types';
 import { exportDatabase, importDatabase } from '../services/db';
 
@@ -8,6 +8,7 @@ interface DashboardProps {
   onSelectSession: (sessionId: string) => void;
   onNewAnalysis: () => void;
   onManageTerms: () => void;
+  onManageBenchmarks: () => void;
   onDeleteSession: (sessionId: string) => void;
   onDataImported: () => void;
 }
@@ -17,6 +18,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onSelectSession, 
   onNewAnalysis, 
   onManageTerms,
+  onManageBenchmarks,
   onDeleteSession,
   onDataImported
 }) => {
@@ -140,17 +142,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
                className="hidden" 
              />
            </div>
-
-           <button 
-             onClick={onManageTerms}
-             className="flex items-center gap-2 px-4 py-2.5 text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 font-medium transition-colors"
-           >
-             <Settings className="w-4 h-4" />
-             Settings
-           </button>
+           
+           <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200">
+             <button 
+               onClick={onManageBenchmarks}
+               className="flex items-center gap-2 px-3 py-2 text-slate-600 bg-transparent hover:bg-white rounded-md hover:shadow-sm font-medium transition-all text-sm"
+               title="Edit Market Standards"
+             >
+               <Scale className="w-4 h-4" />
+               Benchmarks
+             </button>
+             <div className="w-px bg-slate-300 my-2"></div>
+             <button 
+               onClick={onManageTerms}
+               className="flex items-center gap-2 px-3 py-2 text-slate-600 bg-transparent hover:bg-white rounded-md hover:shadow-sm font-medium transition-all text-sm"
+               title="Edit Extraction Terms"
+             >
+               <Settings className="w-4 h-4" />
+               Terms
+             </button>
+           </div>
+           
            <button 
              onClick={onNewAnalysis}
-             className="flex items-center gap-2 px-6 py-2.5 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 shadow-sm transition-colors"
+             className="ml-2 flex items-center gap-2 px-6 py-2.5 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 shadow-sm transition-colors"
            >
              <Plus className="w-5 h-5" />
              New Analysis

@@ -1,3 +1,4 @@
+
 export interface StandardTerm {
   id: string;
   name: string;
@@ -64,5 +65,13 @@ export enum AppView {
   ANALYSIS = 'ANALYSIS',
   CHAT = 'CHAT',
   TERMS = 'TERMS',
+  BENCHMARKS = 'BENCHMARKS',
   MATRIX = 'MATRIX',
+}
+
+export type BenchmarkData = Record<string, string>;
+
+export interface AppSettings {
+  terms: StandardTerm[];
+  benchmarks: BenchmarkData;
 }

@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { LayoutDashboard, MessageSquareText, FileText, ChevronRight, X, AlertCircle, Settings, ArrowLeft, LayoutGrid } from 'lucide-react';
+import { LayoutDashboard, MessageSquareText, FileText, ChevronRight, X, AlertCircle, Settings, ArrowLeft, LayoutGrid, Scale } from 'lucide-react';
 import { FileUpload } from './components/FileUpload';
 import { AnalysisView } from './components/AnalysisView';
 import { ChatView } from './components/ChatView';
 import { TermsManager } from './components/TermsManager';
+import { BenchmarkManager } from './components/BenchmarkManager';
 import { Dashboard } from './components/Dashboard';
 import { MatrixView } from './components/MatrixView';
-import { DEFAULT_TERMS, MAX_FILE_SIZE_MB } from './constants';
-import { AppView, UploadedFile, StandardTerm, DealSession } from './types';
+import { DEFAULT_TERMS, MARKET_BENCHMARK, MAX_FILE_SIZE_MB } from './constants';
+import { AppView, UploadedFile, StandardTerm, DealSession, BenchmarkData } from './types';
 import { getAllSessions, saveSession, deleteSessionById } from './services/db';
+import { getSettings, saveSettings } from './services/settings';
 import { extractAndBenchmark } from './services/geminiService';
 
 function App() {
@@ -20,6 +22,7 @@ function App() {
   
   // Settings State
   const [terms, setTerms] = useState<StandardTerm[]>(DEFAULT_TERMS);
+  const [benchmarks, setBenchmarks] = useState<BenchmarkData>(MARKET_BENCHMARK);
   
   // UI State
   const [showDocPreview, setShowDocPreview] = useState(true);
@@ -32,8 +35,12 @@ function App() {
     try {
       const loadedSessions = await getAllSessions();
       setSessions(loadedSessions);
+      
+      const loadedSettings = await getSettings();
+      setTerms(loadedSettings.terms);
+      setBenchmarks(loadedSettings.benchmarks);
     } catch (err) {
-      console.error("Failed to load sessions:", err);
+      console.error("Failed to load data:", err);
     } finally {
       setIsLoadingDB(false);
     }
@@ -43,6 +50,14 @@ function App() {
   useEffect(() => {
     refreshSessions();
   }, [refreshSessions]);
+
+  // Persist Settings when changed (Debounced implicitly by user action usually, but here we just save on update)
+  useEffect(() => {
+    // Avoid saving initial load if it's just defaults, but simple save is fine
+    if (!isLoadingDB) {
+       saveSettings({ terms, benchmarks });
+    }
+  }, [terms, benchmarks, isLoadingDB]);
 
   // Handlers
   const handleFileSelect = async (uploadedFile: UploadedFile) => {
@@ -106,8 +121,8 @@ function App() {
             lastModified: new Date()
           };
 
-          // 2. Extract Terms AND Benchmark (One Shot)
-          const { extraction, benchmarking } = await extractAndBenchmark(uploadedFile.data, uploadedFile.type, terms);
+          // 2. Extract Terms AND Benchmark (One Shot) - PASSING DYNAMIC BENCHMARKS
+          const { extraction, benchmarking } = await extractAndBenchmark(uploadedFile.data, uploadedFile.type, terms, benchmarks);
           newSession.extractionResults = extraction;
           newSession.benchmarkResults = benchmarking;
 
@@ -132,7 +147,7 @@ function App() {
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
-  }, [terms]);
+  }, [terms, benchmarks]);
 
   const handleSessionSelect = (sessionId: string) => {
     setActiveSessionId(sessionId);
@@ -187,6 +202,7 @@ function App() {
             onSelectSession={handleSessionSelect}
             onNewAnalysis={() => setCurrentView(AppView.UPLOAD)}
             onManageTerms={() => setCurrentView(AppView.TERMS)}
+            onManageBenchmarks={() => setCurrentView(AppView.BENCHMARKS)}
             onDeleteSession={handleDeleteSession}
             onDataImported={refreshSessions}
           />
@@ -197,6 +213,7 @@ function App() {
           <MatrixView 
              sessions={sessions}
              terms={terms}
+             benchmarks={benchmarks}
              onAnalyzeFile={handleMatrixFileAnalyze}
              onRemoveSession={handleDeleteSession}
           />
@@ -224,6 +241,16 @@ function App() {
             terms={terms} 
             setTerms={setTerms} 
             onBack={() => activeSession ? setCurrentView(AppView.ANALYSIS) : setCurrentView(AppView.DASHBOARD)} 
+          />
+        );
+      
+      case AppView.BENCHMARKS:
+        return (
+          <BenchmarkManager
+            benchmarks={benchmarks}
+            setBenchmarks={setBenchmarks}
+            terms={terms}
+            onBack={() => setCurrentView(AppView.DASHBOARD)}
           />
         );
         
@@ -260,15 +287,8 @@ function App() {
     }
   };
 
-  // Sidebar Logic
-  // Determine if we show Sidebar. Always show Sidebar.
-  // Content Logic:
-  // If activeSession, show 2-pane (if not Terms/Matrix).
-  // If no activeSession (Dashboard, Matrix), show 1-pane.
-
-  const isWideView = currentView === AppView.MATRIX || currentView === AppView.DASHBOARD || currentView === AppView.UPLOAD || currentView === AppView.TERMS;
-  const showSidebar = true;
-
+  const isWideView = currentView === AppView.MATRIX || currentView === AppView.DASHBOARD || currentView === AppView.UPLOAD || currentView === AppView.TERMS || currentView === AppView.BENCHMARKS;
+  
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100">
       
@@ -357,6 +377,21 @@ function App() {
         >
           <Settings className="w-6 h-6" />
           {currentView === AppView.TERMS && (
+             <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-brand-500 rounded-r-full -ml-3"></div>
+          )}
+        </button>
+        
+        <button
+          onClick={() => setCurrentView(AppView.BENCHMARKS)}
+          className={`p-3 rounded-xl transition-all group relative ${
+            currentView === AppView.BENCHMARKS
+              ? 'bg-white/10 text-brand-400' 
+              : 'text-slate-400 hover:text-white hover:bg-white/5'
+          }`}
+          title="Manage Benchmarks"
+        >
+          <Scale className="w-6 h-6" />
+          {currentView === AppView.BENCHMARKS && (
              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-brand-500 rounded-r-full -ml-3"></div>
           )}
         </button>
