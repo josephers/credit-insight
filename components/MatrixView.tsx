@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Upload, X, CheckCircle, AlertTriangle, AlertCircle, LayoutGrid, FileText, Plus, ChevronDown } from 'lucide-react';
+import { Upload, X, CheckCircle, AlertTriangle, AlertCircle, LayoutGrid, FileText, Plus, ChevronDown, RefreshCw } from 'lucide-react';
 import { DealSession, StandardTerm, BenchmarkData, BenchmarkProfile } from '../types';
 
 interface MatrixViewProps {
@@ -11,6 +11,7 @@ interface MatrixViewProps {
   onUpdateBenchmarkData: (data: BenchmarkData) => void;
   onAnalyzeFile: (file: File) => Promise<void>;
   onRemoveSession: (id: string) => void;
+  onRebenchmarkSessions: (sessionIds: string[]) => Promise<void>;
 }
 
 export const MatrixView: React.FC<MatrixViewProps> = ({ 
@@ -21,13 +22,15 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
   setActiveProfileId,
   onUpdateBenchmarkData,
   onAnalyzeFile,
-  onRemoveSession 
+  onRemoveSession,
+  onRebenchmarkSessions
 }) => {
   const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>(
     sessions.slice(0, 3).map(s => s.id) // Default to first 3
   );
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isRebenchmarking, setIsRebenchmarking] = useState(false);
 
   // Group terms by category for the table
   const categories = useMemo(() => {
@@ -92,6 +95,19 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
     });
   };
 
+  const handleRebenchmarkClick = async () => {
+    if (selectedSessionIds.length === 0) return;
+    setIsRebenchmarking(true);
+    try {
+      await onRebenchmarkSessions(selectedSessionIds);
+    } catch (error) {
+      console.error("Rebenchmark failed", error);
+      alert("Failed to update variances.");
+    } finally {
+      setIsRebenchmarking(false);
+    }
+  };
+
   const getVarianceColor = (variance?: 'Green' | 'Yellow' | 'Red') => {
     switch(variance) {
       case 'Green': return 'bg-green-50 text-green-700 border-green-200';
@@ -135,6 +151,15 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
         </div>
       )}
 
+       {/* Re-benchmarking Overlay */}
+       {isRebenchmarking && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm">
+           <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+           <h2 className="text-xl font-bold text-slate-800">Updating Variance Analysis...</h2>
+           <p className="text-slate-500">Comparing extracted terms against {activeProfile.name}</p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm flex-shrink-0 z-40 relative">
         <div>
@@ -147,29 +172,43 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
           </p>
         </div>
         
-        {/* Session Selector */}
-        <div className="flex items-center gap-2 relative group">
-           <button className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-medium text-slate-700 transition-colors">
-             <Plus className="w-4 h-4" />
-             Select Deals ({selectedSessionIds.length})
-           </button>
-           
-           {/* Dropdown */}
-           <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 hidden group-hover:block z-50 p-2 max-h-96 overflow-y-auto">
-             <div className="text-xs font-bold text-slate-400 uppercase px-2 py-1 mb-1">Available Sessions</div>
-             {sessions.map(s => (
-               <label key={s.id} className="flex items-center gap-2 px-2 py-2 hover:bg-slate-50 rounded cursor-pointer">
-                 <input 
-                   type="checkbox" 
-                   checked={selectedSessionIds.includes(s.id)}
-                   onChange={() => toggleSession(s.id)}
-                   className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                 />
-                 <span className="text-sm text-slate-700 truncate">{s.borrowerName}</span>
-               </label>
-             ))}
-             {sessions.length === 0 && <div className="p-2 text-sm text-slate-400 italic">No deals available</div>}
-           </div>
+        {/* Actions */}
+        <div className="flex items-center gap-3">
+          
+          <button
+            onClick={handleRebenchmarkClick}
+            disabled={isRebenchmarking || selectedSessionIds.length === 0}
+            className="flex items-center gap-2 px-3 py-2 text-blue-700 bg-blue-50 border border-blue-100 hover:bg-blue-100 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+            title="Recalculate colors based on current benchmark values"
+          >
+             <RefreshCw className={`w-4 h-4 ${isRebenchmarking ? 'animate-spin' : ''}`} />
+             Update Variances
+          </button>
+
+          {/* Session Selector */}
+          <div className="flex items-center gap-2 relative group">
+             <button className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-medium text-slate-700 transition-colors">
+               <Plus className="w-4 h-4" />
+               Select Deals ({selectedSessionIds.length})
+             </button>
+             
+             {/* Dropdown */}
+             <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 hidden group-hover:block z-50 p-2 max-h-96 overflow-y-auto">
+               <div className="text-xs font-bold text-slate-400 uppercase px-2 py-1 mb-1">Available Sessions</div>
+               {sessions.map(s => (
+                 <label key={s.id} className="flex items-center gap-2 px-2 py-2 hover:bg-slate-50 rounded cursor-pointer">
+                   <input 
+                     type="checkbox" 
+                     checked={selectedSessionIds.includes(s.id)}
+                     onChange={() => toggleSession(s.id)}
+                     className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                   />
+                   <span className="text-sm text-slate-700 truncate">{s.borrowerName}</span>
+                 </label>
+               ))}
+               {sessions.length === 0 && <div className="p-2 text-sm text-slate-400 italic">No deals available</div>}
+             </div>
+          </div>
         </div>
       </div>
 

@@ -141,6 +141,95 @@ export const extractAndBenchmark = async (
 };
 
 /**
+ * Recalculates variance for existing extracted terms against a NEW benchmark profile.
+ * Does NOT require the original file content, only the text extractions.
+ */
+export const rebenchmarkTerms = async (
+  extractedResults: ExtractionResult[],
+  benchmarkData: BenchmarkData
+): Promise<BenchmarkResult[]> => {
+  try {
+    // Filter out terms that don't have a corresponding benchmark to save tokens
+    // But keep them if we want to explicitly see N/A. 
+    // Optimization: Only send relevant terms or all? Sending all is safer for context.
+    const simplifiedExtractions = extractedResults.map(r => ({
+      term: r.term,
+      value: r.value
+    }));
+
+    const prompt = `
+      You are a Senior Credit Officer.
+      
+      I will provide a list of extracted terms from a credit agreement and a "Target Market Benchmark".
+      
+      Your task is to RE-EVALUATE the risk variance of these terms against the provided benchmark.
+      
+      TARGET BENCHMARK:
+      ${JSON.stringify(benchmarkData, null, 2)}
+      
+      EXTRACTED TERMS:
+      ${JSON.stringify(simplifiedExtractions, null, 2)}
+      
+      INSTRUCTIONS:
+      - Compare 'value' vs 'benchmark'.
+      - Determine 'variance': 
+         - 'Green': Term is standard/neutral or better/safer for lender than benchmark.
+         - 'Yellow': Term deviates slightly or is slightly looser.
+         - 'Red': Term is aggressive, off-market, or significantly looser (riskier).
+         - 'N/A': If the term is not in the Target Benchmark list.
+      - Provide short 'commentary' explaining the difference.
+      
+      Return JSON array.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: [{ parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              term: { type: Type.STRING },
+              benchmarkValue: { type: Type.STRING },
+              variance: { type: Type.STRING, enum: ['Green', 'Yellow', 'Red', 'N/A'] },
+              commentary: { type: Type.STRING }
+            },
+            required: ['term', 'variance', 'commentary']
+          }
+        }
+      }
+    });
+
+    const rawResults = JSON.parse(response.text!);
+    
+    // Map back to full BenchmarkResult objects
+    const newBenchmarkResults: BenchmarkResult[] = [];
+    
+    rawResults.forEach((r: any) => {
+      const originalExtraction = extractedResults.find(e => e.term === r.term);
+      if (originalExtraction && r.variance !== 'N/A') {
+        newBenchmarkResults.push({
+          term: r.term,
+          extractedValue: originalExtraction.value,
+          benchmarkValue: r.benchmarkValue || benchmarkData[r.term as keyof typeof benchmarkData] || 'N/A',
+          variance: r.variance,
+          commentary: r.commentary
+        });
+      }
+    });
+
+    return newBenchmarkResults;
+
+  } catch (error) {
+    console.error("Re-benchmarking error:", error);
+    throw error;
+  }
+};
+
+/**
  * Fetches latest financial data for a borrower using Google Search Grounding.
  */
 export const fetchFinancialsFromWeb = async (

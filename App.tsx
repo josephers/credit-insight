@@ -11,7 +11,7 @@ import { DEFAULT_TERMS, DEFAULT_BENCHMARK_PROFILES, MAX_FILE_SIZE_MB } from './c
 import { AppView, UploadedFile, StandardTerm, DealSession, BenchmarkData, BenchmarkProfile } from './types';
 import { getAllSessions, saveSession, deleteSessionById } from './services/db';
 import { getSettings, saveSettings } from './services/settings';
-import { extractAndBenchmark } from './services/geminiService';
+import { extractAndBenchmark, rebenchmarkTerms } from './services/geminiService';
 
 function App() {
   // Global State
@@ -152,6 +152,40 @@ function App() {
     });
   }, [terms, activeBenchmarkData]);
 
+  // NEW: Batch Re-benchmark handler
+  const handleRebenchmarkSessions = async (sessionIds: string[]) => {
+     // Use the currently active benchmark data
+     const targetBenchmarks = activeBenchmarkData;
+
+     // Iterate and update
+     const updatedSessions = [...sessions];
+     
+     // Process in parallel or serial? Parallel is faster.
+     await Promise.all(sessionIds.map(async (sessionId) => {
+        const sessionIndex = updatedSessions.findIndex(s => s.id === sessionId);
+        if (sessionIndex === -1) return;
+        
+        const session = updatedSessions[sessionIndex];
+        
+        // Call Service
+        const newResults = await rebenchmarkTerms(session.extractionResults, targetBenchmarks);
+        
+        // Update session object
+        const updatedSession = {
+           ...session,
+           benchmarkResults: newResults,
+           lastModified: new Date()
+        };
+        
+        updatedSessions[sessionIndex] = updatedSession;
+        
+        // Save to DB
+        await saveSession(updatedSession);
+     }));
+     
+     setSessions(updatedSessions);
+  };
+
   const handleSessionSelect = (sessionId: string) => {
     setActiveSessionId(sessionId);
     setCurrentView(AppView.ANALYSIS);
@@ -232,6 +266,7 @@ function App() {
              onUpdateBenchmarkData={handleUpdateBenchmarks}
              onAnalyzeFile={handleMatrixFileAnalyze}
              onRemoveSession={handleDeleteSession}
+             onRebenchmarkSessions={handleRebenchmarkSessions}
           />
         );
       
@@ -359,9 +394,9 @@ function App() {
               currentView === AppView.DASHBOARD 
                 ? 'bg-white/10 text-brand-400' 
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-            title="Dashboard"
-          >
+              }`}
+              title="Dashboard"
+            >
             <LayoutDashboard className="w-6 h-6" />
             {currentView === AppView.DASHBOARD && (
                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-brand-500 rounded-r-full -ml-3"></div>
