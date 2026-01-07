@@ -3,6 +3,7 @@ import { DealSession } from '../types';
 const DB_NAME = 'CreditInsightDB';
 const STORE_NAME = 'sessions';
 const DB_VERSION = 2;
+const API_URL = '/api/db';
 
 /**
  * Open the IndexedDB database.
@@ -30,9 +31,47 @@ const openDB = (): Promise<IDBDatabase> => {
 };
 
 /**
+ * Syncs the current IndexedDB state to the server file.
+ */
+const syncToServer = async (): Promise<void> => {
+  try {
+    const json = await exportDatabase();
+    await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: json
+    });
+  } catch (err) {
+    // Ignore errors (e.g. if running in a build without the server middleware)
+    console.warn("Failed to sync to server:", err);
+  }
+};
+
+/**
+ * Syncs from server file to IndexedDB.
+ */
+const syncFromServer = async (): Promise<void> => {
+  try {
+    const response = await fetch(API_URL);
+    if (!response.ok) return;
+    const json = await response.text();
+    if (json && json !== '[]') {
+       // We use importDatabase to merge/overwrite local state with server state
+       await importDatabase(json, false); // false = don't sync back to server to avoid loop
+    }
+  } catch (err) {
+    console.warn("Failed to sync from server:", err);
+  }
+};
+
+/**
  * Get all deal sessions from the database.
+ * Now attempts to fetch from server first to ensure freshness.
  */
 export const getAllSessions = async (): Promise<DealSession[]> => {
+  // Try to get latest from server first
+  await syncFromServer();
+
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction([STORE_NAME], 'readonly');
@@ -63,7 +102,7 @@ export const getAllSessions = async (): Promise<DealSession[]> => {
  */
 export const saveSession = async (session: DealSession): Promise<void> => {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction([STORE_NAME], 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
     const request = store.put(session);
@@ -71,6 +110,9 @@ export const saveSession = async (session: DealSession): Promise<void> => {
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
   });
+  
+  // Sync to server after local save
+  await syncToServer();
 };
 
 /**
@@ -78,7 +120,7 @@ export const saveSession = async (session: DealSession): Promise<void> => {
  */
 export const deleteSessionById = async (id: string): Promise<void> => {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction([STORE_NAME], 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
     const request = store.delete(id);
@@ -86,27 +128,41 @@ export const deleteSessionById = async (id: string): Promise<void> => {
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
   });
+
+  // Sync to server after local delete
+  await syncToServer();
 };
 
 /**
  * Exports the entire database to a JSON string.
  */
 export const exportDatabase = async (): Promise<string> => {
-  const sessions = await getAllSessions();
-  return JSON.stringify(sessions, null, 2);
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], 'readonly');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.getAll();
+
+    request.onsuccess = () => {
+       resolve(JSON.stringify(request.result, null, 2));
+    };
+    request.onerror = () => reject(request.error);
+  });
 };
 
 /**
  * Imports a JSON string into the database, merging with existing data.
+ * @param jsonString The JSON content
+ * @param shouldSyncToServer Whether to push this new state to server (default true)
  */
-export const importDatabase = async (jsonString: string): Promise<void> => {
+export const importDatabase = async (jsonString: string, shouldSyncToServer = true): Promise<void> => {
   try {
     const sessions = JSON.parse(jsonString);
     if (!Array.isArray(sessions)) throw new Error("Invalid backup file format");
 
     const db = await openDB();
     
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const transaction = db.transaction([STORE_NAME], 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
 
@@ -132,6 +188,10 @@ export const importDatabase = async (jsonString: string): Promise<void> => {
         store.put(session);
       });
     });
+
+    if (shouldSyncToServer) {
+      await syncToServer();
+    }
   } catch (e) {
     console.error("Import failed", e);
     throw e;
