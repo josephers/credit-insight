@@ -24,7 +24,7 @@ function App() {
   const [terms, setTerms] = useState<StandardTerm[]>(DEFAULT_TERMS);
   const [benchmarkProfiles, setBenchmarkProfiles] = useState<BenchmarkProfile[]>(DEFAULT_BENCHMARK_PROFILES);
   const [activeProfileId, setActiveProfileId] = useState<string>(DEFAULT_BENCHMARK_PROFILES[0].id);
-  const [aiProvider, setAiProvider] = useState<AIProvider>('gemini');
+  const [aiProvider, setAiProvider] = useState<AIProvider>('azure');
   
   // UI State
   const [showDocPreview, setShowDocPreview] = useState(true);
