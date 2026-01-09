@@ -31,6 +31,7 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isRebenchmarking, setIsRebenchmarking] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   // Group terms by category for the table
   const categories = useMemo(() => {
@@ -194,40 +195,52 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
           </button>
 
           {/* Session Selector */}
-          <div className="flex items-center gap-2 relative group">
-             <button className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-medium text-slate-700 transition-colors">
+          <div className="flex items-center gap-2 relative">
+             <button 
+               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                 isDropdownOpen ? 'bg-slate-200 text-slate-800' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+               }`}
+             >
                <Plus className="w-4 h-4" />
                Select Deals ({selectedSessionIds.length})
              </button>
              
+             {/* Backdrop to close on click outside */}
+             {isDropdownOpen && (
+               <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)}></div>
+             )}
+
              {/* Dropdown */}
-             <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 hidden group-hover:block z-50 p-2 max-h-96 overflow-y-auto">
-               <div className="flex justify-between items-center px-2 py-2 mb-1 border-b border-slate-100">
-                 <span className="text-xs font-bold text-slate-400 uppercase">Available Sessions</span>
-                 <button 
-                   onClick={toggleAllSessions}
-                   className="text-[10px] font-semibold text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100 px-2 py-0.5 rounded transition-colors"
-                 >
-                   {selectedSessionIds.length === sessions.length && sessions.length > 0 ? 'Deselect All' : 'Select All'}
-                 </button>
+             {isDropdownOpen && (
+               <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-2 max-h-96 overflow-y-auto animate-in fade-in zoom-in-95 duration-100">
+                 <div className="flex justify-between items-center px-2 py-2 mb-1 border-b border-slate-100">
+                   <span className="text-xs font-bold text-slate-400 uppercase">Available Sessions</span>
+                   <button 
+                     onClick={(e) => { e.stopPropagation(); toggleAllSessions(); }}
+                     className="text-[10px] font-semibold text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100 px-2 py-0.5 rounded transition-colors"
+                   >
+                     {selectedSessionIds.length === sessions.length && sessions.length > 0 ? 'Deselect All' : 'Select All'}
+                   </button>
+                 </div>
+                 
+                 {sessions.length > 0 ? (
+                   sessions.map(s => (
+                     <label key={s.id} className="flex items-center gap-2 px-2 py-2 hover:bg-slate-50 rounded cursor-pointer">
+                       <input 
+                         type="checkbox" 
+                         checked={selectedSessionIds.includes(s.id)}
+                         onChange={() => toggleSession(s.id)}
+                         className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                       />
+                       <span className="text-sm text-slate-700 truncate">{s.borrowerName}</span>
+                     </label>
+                   ))
+                 ) : (
+                   <div className="p-2 text-sm text-slate-400 italic">No deals available</div>
+                 )}
                </div>
-               
-               {sessions.length > 0 ? (
-                 sessions.map(s => (
-                   <label key={s.id} className="flex items-center gap-2 px-2 py-2 hover:bg-slate-50 rounded cursor-pointer">
-                     <input 
-                       type="checkbox" 
-                       checked={selectedSessionIds.includes(s.id)}
-                       onChange={() => toggleSession(s.id)}
-                       className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                     />
-                     <span className="text-sm text-slate-700 truncate">{s.borrowerName}</span>
-                   </label>
-                 ))
-               ) : (
-                 <div className="p-2 text-sm text-slate-400 italic">No deals available</div>
-               )}
-             </div>
+             )}
           </div>
         </div>
       </div>
